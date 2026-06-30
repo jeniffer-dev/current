@@ -110,10 +110,8 @@ export default async function TestsPage() {
 
   let historyBlocks: TestingHistoryBlock[] = [];
 
-  const completedDbBlocks = allDbBlocks.filter(b => b.status === 'completed');
-
-  if (completedDbBlocks.length > 0) {
-    const blockIds = completedDbBlocks.map(b => b.id);
+  if (allDbBlocks.length > 0) {
+    const blockIds = allDbBlocks.map(b => b.id);
 
     const { data: resultsRaw } = await supabase
       .from('test_results')
@@ -137,14 +135,17 @@ export default async function TestsPage() {
       });
     }
 
-    // Most recent block first
-    historyBlocks = [...completedDbBlocks].reverse().map(b => ({
-      id:             b.id,
-      week_number:    b.week_number,
-      purpose:        b.purpose        ?? '',
-      scheduled_date: b.scheduled_date ?? null,
-      results:        resultsByBlock.get(b.id) ?? [],
-    }));
+    // Only include blocks that have at least one result; most recent first
+    historyBlocks = [...allDbBlocks]
+      .reverse()
+      .filter(b => (resultsByBlock.get(b.id) ?? []).length > 0)
+      .map(b => ({
+        id:             b.id,
+        week_number:    b.week_number,
+        purpose:        b.purpose        ?? '',
+        scheduled_date: b.scheduled_date ?? null,
+        results:        resultsByBlock.get(b.id) ?? [],
+      }));
   }
 
   // ── render ────────────────────────────────────────────────────
