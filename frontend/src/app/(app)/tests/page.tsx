@@ -115,11 +115,21 @@ export default async function TestsPage() {
 
     const { data: resultsRaw } = await supabase
       .from('test_results')
-      .select('id, result_value, testing_block_id, test_templates(name, category, metric_type, unit)')
-      .in('testing_block_id', blockIds);
+      .select('id, test_template_id, result_value, testing_block_id, test_templates(name, category, metric_type, unit)')
+      .in('testing_block_id', blockIds)
+      .order('created_at', { ascending: true });
+
+    // One result per template per block — last write wins (most recent, query is asc)
+    const seenKeys = new Set<string>();
+    const deduped = (resultsRaw ?? []).reverse().filter(r => {
+      const key = `${r.testing_block_id}::${r.test_template_id}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
 
     const resultsByBlock = new Map<string, BlockResult[]>();
-    for (const r of resultsRaw ?? []) {
+    for (const r of deduped) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ttRaw = (r as any).test_templates;
       const tt = Array.isArray(ttRaw) ? ttRaw[0] : ttRaw;
