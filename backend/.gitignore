@@ -1,0 +1,14 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next *)",
+      "Bash(Remove-Item -Recurse -Force \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\\\\frontend\\\\.next\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"cleaned\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\\\\frontend\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\\\\frontend\\\\src\\\\app\\\\\\(app\\)\\\\tests\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\\\\frontend\\\\src\\\\features\\\\tests\")",
+      "Bash(mkdir -p \"c:/Users/JenifferAcosta/OneDrive - evopower.com.au/Jeniffer/current/frontend/src/app/\\(app\\)/tests/[week]\")",
+      "Bash(npm run *)",
+      "Bash(mkdir \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\\\\frontend\\\\src\\\\app\\\\\\(app\\)\\\\tests\\\\[week]\\\\session\\\\[sessionId]\")",
+      "Bash(mkdir -p \"c:/Users/JenifferAcosta/OneDrive - evopower.com.au/Jeniffer/current/frontend/src/app/\\(app\\)/tests/[week]/session/[sessionId]\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\JenifferAcosta\\\\OneDrive - evopower.com.au\\\\Jeniffer\\\\current\" -Recurse -Directory)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\JenifferAcosta\\OneDrive - evopower.com.au\\Jeniffer\\current\\frontend\\src\\app\\(app)\\tests",
+      "c:\\Users\\JenifferAcosta\\OneDrive - evopower.com.au\\Jeniffer\\current\\frontend\\src\\app\\(app)\\tests\\[week]\\session"
+    ]
+  }
+}

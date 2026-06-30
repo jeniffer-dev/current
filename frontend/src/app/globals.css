@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* CURRENT brand tokens */
+    --current-soft:     #ADEEE3;
+    --current-recovery: #86DEB7;
+    --current-primary:  #63B995;
+    --current-load:     #F5A65B;
+    --current-peak:     #FCD581;
+
+    /* Page background: warm off-white #F8F8F5 */
+    --background: 60 18% 97%;
+    --foreground: 222 18% 16%;
+
+    /* Cards: slightly lighter warm white — soft separation from page */
+    --card: 40 25% 99%;
+    --card-foreground: 222 18% 16%;
+
+    --popover: 40 25% 99%;
+    --popover-foreground: 222 18% 16%;
+
+    /* Primary: #63B995 — slightly desaturated for refinement */
+    --primary: 155 34% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 12% 93%;
+    --secondary-foreground: 222 15% 25%;
+
+    --muted: 40 10% 94%;
+    --muted-foreground: 220 8% 50%;
+
+    --accent: 40 12% 93%;
+    --accent-foreground: 222 18% 16%;
+
+    --destructive: 0 72% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 10% 90%;
+    --input: 40 10% 90%;
+    --ring: 155 34% 54%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}

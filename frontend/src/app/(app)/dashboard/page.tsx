@@ -1,0 +1,166 @@
+import type { Metadata } from 'next';
+import { createClient } from '@/lib/supabase/server';
+import { MacrocycleCard } from '@/features/dashboard/macrocycle-card';
+import { PhaseCard } from '@/features/dashboard/phase-card';
+import { CountdownCard } from '@/features/dashboard/countdown-card';
+import { TrainingTodayCard } from '@/features/dashboard/training-today-card';
+import { ConsistencyCard } from '@/features/dashboard/consistency-card';
+import { LatestReflectionCard } from '@/features/dashboard/latest-reflection-card';
+import type { LatestNote } from '@/features/dashboard/latest-reflection-card';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('macrocycles')
+    .select('name')
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .single();
+  return { title: `${data?.name ?? 'CURRENT'} · CURRENT` };
+}
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const today = new Date().toISOString().split('T')[0];
+
+  // ── macrocycle ───────────────────────────────────────────────
+
+  const { data: macrocycles } = await supabase
+    .from('macrocycles')
+    .select('id, name, goal_event, start_date, end_date')
+    .order('start_date', { ascending: false })
+    .limit(1);
+
+  const macrocycle = macrocycles?.[0] ?? null;
+
+  // ── current phase ────────────────────────────────────────────
+
+  let currentPhase: {
+    id: string;
+    name: string;
+    phase_type: string;
+    start_date: string;
+    end_date: string;
+    volume: string | null;
+    intensity: string | null;
+  } | null = null;
+
+  if (macrocycle) {
+    const { data: phases } = await supabase
+      .from('phases')
+      .select('id, name, phase_type, start_date, end_date, volume, intensity')
+      .eq('macrocycle_id', macrocycle.id)
+      .order('start_date', { ascending: true });
+
+    if (phases?.length) {
+      currentPhase =
+        phases.find(p => p.start_date <= today && p.end_date >= today) ??
+        phases.find(p => p.start_date > today) ??
+        phases[phases.length - 1] ??
+        null;
+    }
+  }
+
+  // ── today's training ─────────────────────────────────────────
+
+  const { data: trainingDay } = await supabase
+    .from('training_days')
+    .select('id, date, session_type, status, readiness_score, notes')
+    .eq('date', today)
+    .maybeSingle();
+
+  let todaySessions: { id: string; session_name: string; status: string }[] = [];
+  if (trainingDay) {
+    const { data: sessionsRaw } = await supabase
+      .from('training_day_sessions')
+      .select('id, session_name, status')
+      .eq('training_day_id', trainingDay.id)
+      .order('created_at', { ascending: true });
+    todaySessions = sessionsRaw ?? [];
+  }
+
+  // ── phase consistency ────────────────────────────────────────
+
+  let phaseSessionData: { session_type: string; status: string }[] = [];
+
+  if (currentPhase) {
+    const { data: daysRaw } = await supabase
+      .from('training_days')
+      .select('id')
+      .gte('date', currentPhase.start_date)
+      .lte('date', currentPhase.end_date);
+
+    const phaseTrainingDayIds = (daysRaw ?? []).map(d => d.id);
+
+    if (phaseTrainingDayIds.length > 0) {
+      const { data: sessionsRaw } = await supabase
+        .from('training_day_sessions')
+        .select('session_type, status')
+        .in('training_day_id', phaseTrainingDayIds);
+
+      phaseSessionData = sessionsRaw ?? [];
+    }
+  }
+
+  // ── latest reflection ────────────────────────────────────────
+
+  let latestNote: LatestNote | null = null;
+
+  const { data: latestNoteRaw } = await supabase
+    .from('training_day_sessions')
+    .select('notes, session_name, training_days(date)')
+    .not('notes', 'is', null)
+    .neq('notes', '')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestNoteRaw?.notes) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const td = (latestNoteRaw as any).training_days;
+    const date = Array.isArray(td) ? (td[0]?.date ?? null) : (td?.date ?? null);
+    latestNote = {
+      text:        latestNoteRaw.notes,
+      sessionName: latestNoteRaw.session_name,
+      date,
+    };
+  }
+
+  // ── render ───────────────────────────────────────────────────
+
+  return (
+    <div className="w-full max-w-[1120px] mx-auto px-5 pt-6 pb-8 sm:px-8 sm:pt-7 md:px-10 md:pt-8 space-y-4">
+
+      {/* Header */}
+      <div className="mb-2">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {macrocycle?.name ?? '—'}
+        </h1>
+      </div>
+
+      {/* Row 1: Macrocycle + Countdown */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2">
+          <MacrocycleCard macrocycle={macrocycle} today={today} />
+        </div>
+        <CountdownCard macrocycle={macrocycle} today={today} />
+      </div>
+
+      {/* Row 2: Today + Consistency */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <TrainingTodayCard trainingDay={trainingDay} sessions={todaySessions} />
+        <ConsistencyCard
+          phaseSessionData={phaseSessionData}
+          phaseName={currentPhase?.name ?? null}
+        />
+      </div>
+
+      {/* Row 3: Phase + Latest Reflection */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <PhaseCard phase={currentPhase} today={today} />
+        <LatestReflectionCard note={latestNote} />
+      </div>
+
+    </div>
+  );
+}
