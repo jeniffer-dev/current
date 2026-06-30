@@ -55,7 +55,7 @@ export default async function PerformancePage() {
   const supabase = await createClient();
   const today = new Date().toISOString().split('T')[0];
 
-  // ── macrocycle ──────────────────────────────────────────────
+  // ── macrocycle (needed for everything else) ─────────────────
 
   const { data: macrocyclesRaw } = await supabase
     .from('macrocycles')
@@ -65,17 +65,32 @@ export default async function PerformancePage() {
 
   const macrocycle: Macrocycle | null = macrocyclesRaw?.[0] ?? null;
 
-  // ── phases ──────────────────────────────────────────────────
+  // ── batch: phases + testing blocks + exercise logs (parallel) ─
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let blocksRaw: any[] = [];
   let phases: Phase[] = [];
   let currentPhase: Phase | null = null;
+  let exerciseProgressions: ExerciseProgression[] = [];
 
   if (macrocycle) {
-    const { data: phasesData } = await supabase
-      .from('phases')
-      .select('id, name, phase_type, start_date, end_date')
-      .eq('macrocycle_id', macrocycle.id)
-      .order('start_date', { ascending: true });
+    const [{ data: phasesData }, { data: blocksData }, { data: logsRaw }] =
+      await Promise.all([
+        supabase
+          .from('phases')
+          .select('id, name, phase_type, start_date, end_date')
+          .eq('macrocycle_id', macrocycle.id)
+          .order('start_date', { ascending: true }),
+        supabase
+          .from('testing_blocks')
+          .select('id, week_number, purpose, scheduled_date, status, updated_at')
+          .eq('macrocycle_id', macrocycle.id)
+          .order('week_number', { ascending: true }),
+        supabase
+          .from('exercise_logs')
+          .select('id, weight, reps, logged_at, exercises(name, is_loggable)')
+          .order('logged_at', { ascending: false }),
+      ]);
 
     phases = (phasesData ?? []) as Phase[];
     currentPhase =
@@ -83,20 +98,34 @@ export default async function PerformancePage() {
       phases.find(p => p.start_date > today) ??
       phases[phases.length - 1] ??
       null;
-  }
 
-  // ── testing blocks ──────────────────────────────────────────
+    blocksRaw = blocksData ?? [];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let blocksRaw: any[] = [];
+    // ── exercise logs (training progression) ──────────────────
 
-  if (macrocycle) {
-    const { data } = await supabase
-      .from('testing_blocks')
-      .select('id, week_number, purpose, scheduled_date, status, updated_at')
-      .eq('macrocycle_id', macrocycle.id)
-      .order('week_number', { ascending: true });
-    blocksRaw = data ?? [];
+    const progressionMap = new Map<string, ExerciseEntry[]>();
+
+    for (const log of logsRaw ?? []) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const exRaw = (log as any).exercises;
+      const ex = Array.isArray(exRaw) ? exRaw[0] : exRaw;
+      if (!ex?.is_loggable) continue;
+
+      if (!progressionMap.has(ex.name)) progressionMap.set(ex.name, []);
+      const entries = progressionMap.get(ex.name)!;
+      if (entries.length < 10) {
+        entries.push({
+          date:   (log.logged_at as string).split('T')[0],
+          weight: log.weight,
+          reps:   log.reps,
+        });
+      }
+    }
+
+    exerciseProgressions = [...progressionMap.entries()].map(([name, entries]) => ({
+      exerciseName: name,
+      entries,
+    }));
   }
 
   const completedBlocks = blocksRaw.filter((b) => b.status === 'completed');
@@ -222,41 +251,6 @@ export default async function PerformancePage() {
       if (bi === -1) return -1;
       return ai - bi;
     });
-
-  // ── exercise logs (training progression) ────────────────────
-
-  let exerciseProgressions: ExerciseProgression[] = [];
-
-  {
-    const { data: logsRaw } = await supabase
-      .from('exercise_logs')
-      .select('id, weight, reps, logged_at, exercises(name, is_loggable)')
-      .order('logged_at', { ascending: false });
-
-    const progressionMap = new Map<string, ExerciseEntry[]>();
-
-    for (const log of logsRaw ?? []) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const exRaw = (log as any).exercises;
-      const ex = Array.isArray(exRaw) ? exRaw[0] : exRaw;
-      if (!ex?.is_loggable) continue;
-
-      if (!progressionMap.has(ex.name)) progressionMap.set(ex.name, []);
-      const entries = progressionMap.get(ex.name)!;
-      if (entries.length < 10) {
-        entries.push({
-          date:   (log.logged_at as string).split('T')[0],
-          weight: log.weight,
-          reps:   log.reps,
-        });
-      }
-    }
-
-    exerciseProgressions = [...progressionMap.entries()].map(([name, entries]) => ({
-      exerciseName: name,
-      entries,
-    }));
-  }
 
   // ── training day sessions (current phase — for Consistency) ──
 

@@ -101,56 +101,50 @@ export default async function PlannerPage({
     );
   }
 
-  // Fetch all phases
-  const { data: phasesData } = await supabase
-    .from('phases')
-    .select('id, name, phase_type, start_date, end_date')
-    .eq('macrocycle_id', macrocycle.id)
-    .order('start_date', { ascending: true });
-
-  const phases: Phase[] = (phasesData ?? []) as Phase[];
-
-  // Determine week
+  // Determine week dates (only needs macrocycle.start_date)
   const defaultOffset = getCurrentWeekOffset(macrocycle.start_date, today);
   const weekOffset = params.w !== undefined ? Math.max(0, parseInt(params.w, 10)) : defaultOffset;
   const weekStart = getWeekStart(macrocycle.start_date, weekOffset);
   const weekDays = getWeekDays(weekStart);
   const weekEnd = weekDays[6];
   const weekNumber = weekOffset + 1;
+  const weekStartStr = toDateStr(weekStart);
+  const weekEndStr = toDateStr(weekEnd);
+
+  // Fetch phases + gym templates + swim templates + training days in parallel
+  const [{ data: phasesData }, { data: gymTemplatesData }, { data: swimTemplatesData }, { data: trainingDaysData }] =
+    await Promise.all([
+      supabase
+        .from('phases')
+        .select('id, name, phase_type, start_date, end_date')
+        .eq('macrocycle_id', macrocycle.id)
+        .order('start_date', { ascending: true }),
+      supabase
+        .from('gym_session_templates')
+        .select('id, name, phase_type')
+        .order('name', { ascending: true }),
+      supabase
+        .from('swim_session_templates')
+        .select('id, name')
+        .order('name', { ascending: true }),
+      supabase
+        .from('training_days')
+        .select('id, date, session_type, status, notes')
+        .gte('date', weekStartStr)
+        .lte('date', weekEndStr)
+        .order('date', { ascending: true }),
+    ]);
+
+  const phases: Phase[] = (phasesData ?? []) as Phase[];
+  const gymTemplates = (gymTemplatesData ?? []) as { id: string; name: string; phase_type: string | null }[];
+  const swimTemplates = (swimTemplatesData ?? []) as { id: string; name: string }[];
 
   // Phase for this week (based on week midpoint)
   const weekMidStr = toDateStr(addDays(weekStart, 3));
   const weekPhase = phases.find(p => p.start_date <= weekMidStr && p.end_date >= weekMidStr) ?? null;
 
-  // Fetch all gym templates; phase-matching ones are flagged as recommended.
-  const { data: gymTemplatesData } = await supabase
-    .from('gym_session_templates')
-    .select('id, name, phase_type')
-    .order('name', { ascending: true });
-
-  const gymTemplates = (gymTemplatesData ?? []) as { id: string; name: string; phase_type: string | null }[];
-
-  // Fetch all swim templates
-  const { data: swimTemplatesData } = await supabase
-    .from('swim_session_templates')
-    .select('id, name')
-    .order('name', { ascending: true });
-
-  const swimTemplates = (swimTemplatesData ?? []) as { id: string; name: string }[];
-
-  // Fetch training days for this week
-  const weekStartStr = toDateStr(weekStart);
-  const weekEndStr = toDateStr(weekEnd);
-
-  const { data: trainingDaysData } = await supabase
-    .from('training_days')
-    .select('id, date, session_type, status, notes')
-    .gte('date', weekStartStr)
-    .lte('date', weekEndStr)
-    .order('date', { ascending: true });
-
   const trainingDays = (trainingDaysData ?? []) as TrainingDay[];
-  const byDate = new Map<string, TrainingDay>(trainingDays.map(d => [d.date, d]));
+  const byDate       = new Map<string, TrainingDay>(trainingDays.map(d => [d.date, d]));
 
   // Fetch training_day_sessions for all days in this week
   const trainingDayIds = trainingDays.map(d => d.id);

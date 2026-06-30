@@ -23,15 +23,56 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const today = new Date().toISOString().split('T')[0];
 
-  // ── macrocycle ───────────────────────────────────────────────
+  // ── batch 1: macrocycle + today + latest note (all independent) ─
 
-  const { data: macrocycles } = await supabase
-    .from('macrocycles')
-    .select('id, name, goal_event, start_date, end_date')
-    .order('start_date', { ascending: false })
-    .limit(1);
+  const [
+    { data: macrocycles },
+    { data: trainingDay },
+    { data: latestNoteRaw },
+  ] = await Promise.all([
+    supabase
+      .from('macrocycles')
+      .select('id, name, goal_event, start_date, end_date')
+      .order('start_date', { ascending: false })
+      .limit(1),
+    supabase
+      .from('training_days')
+      .select('id, date, session_type, status, readiness_score, notes')
+      .eq('date', today)
+      .maybeSingle(),
+    supabase
+      .from('training_day_sessions')
+      .select('notes, session_name, training_days(date)')
+      .not('notes', 'is', null)
+      .neq('notes', '')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   const macrocycle = macrocycles?.[0] ?? null;
+
+  // ── batch 2: phases + today's sessions (depend on batch 1) ───
+
+  const [{ data: phases }, { data: todaySessionsRaw }] = await Promise.all([
+    macrocycle
+      ? supabase
+          .from('phases')
+          .select('id, name, phase_type, start_date, end_date, volume, intensity')
+          .eq('macrocycle_id', macrocycle.id)
+          .order('start_date', { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
+    trainingDay
+      ? supabase
+          .from('training_day_sessions')
+          .select('id, session_name, status')
+          .eq('training_day_id', trainingDay.id)
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const todaySessions: { id: string; session_name: string; status: string }[] =
+    todaySessionsRaw ?? [];
 
   // ── current phase ────────────────────────────────────────────
 
@@ -45,38 +86,12 @@ export default async function DashboardPage() {
     intensity: string | null;
   } | null = null;
 
-  if (macrocycle) {
-    const { data: phases } = await supabase
-      .from('phases')
-      .select('id, name, phase_type, start_date, end_date, volume, intensity')
-      .eq('macrocycle_id', macrocycle.id)
-      .order('start_date', { ascending: true });
-
-    if (phases?.length) {
-      currentPhase =
-        phases.find(p => p.start_date <= today && p.end_date >= today) ??
-        phases.find(p => p.start_date > today) ??
-        phases[phases.length - 1] ??
-        null;
-    }
-  }
-
-  // ── today's training ─────────────────────────────────────────
-
-  const { data: trainingDay } = await supabase
-    .from('training_days')
-    .select('id, date, session_type, status, readiness_score, notes')
-    .eq('date', today)
-    .maybeSingle();
-
-  let todaySessions: { id: string; session_name: string; status: string }[] = [];
-  if (trainingDay) {
-    const { data: sessionsRaw } = await supabase
-      .from('training_day_sessions')
-      .select('id, session_name, status')
-      .eq('training_day_id', trainingDay.id)
-      .order('created_at', { ascending: true });
-    todaySessions = sessionsRaw ?? [];
+  if (phases?.length) {
+    currentPhase =
+      phases.find(p => p.start_date <= today && p.end_date >= today) ??
+      phases.find(p => p.start_date > today) ??
+      phases[phases.length - 1] ??
+      null;
   }
 
   // ── phase consistency ────────────────────────────────────────
@@ -105,15 +120,6 @@ export default async function DashboardPage() {
   // ── latest reflection ────────────────────────────────────────
 
   let latestNote: LatestNote | null = null;
-
-  const { data: latestNoteRaw } = await supabase
-    .from('training_day_sessions')
-    .select('notes, session_name, training_days(date)')
-    .not('notes', 'is', null)
-    .neq('notes', '')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   if (latestNoteRaw?.notes) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
