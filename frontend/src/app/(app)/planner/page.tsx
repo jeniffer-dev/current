@@ -108,6 +108,9 @@ export default async function PlannerPage({
   const weekDays = getWeekDays(weekStart);
   const weekEnd = weekDays[6];
   const weekNumber = weekOffset + 1;
+
+  // Sort Mon→Sun for display; dates and scheduling are unaffected
+  weekDays.sort((a, b) => ((a.getDay() + 6) % 7) - ((b.getDay() + 6) % 7));
   const weekStartStr = toDateStr(weekStart);
   const weekEndStr = toDateStr(weekEnd);
 
