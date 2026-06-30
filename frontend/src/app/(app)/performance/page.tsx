@@ -169,13 +169,13 @@ export default async function PerformancePage() {
     byBlock:     Record<string, number>;
   }> = {};
 
-  if (completedBlocks.length > 0) {
-    const completedBlockIds = completedBlocks.map((b) => b.id);
+  if (blocksRaw.length > 0) {
+    const allBlockIds = blocksRaw.map((b) => b.id);
 
     const { data: resultsRaw } = await supabase
       .from('test_results')
       .select('test_template_id, result_value, testing_block_id, test_templates(name, metric_type, unit)')
-      .in('testing_block_id', completedBlockIds)
+      .in('testing_block_id', allBlockIds)
       .order('created_at', { ascending: true });
 
     for (const r of resultsRaw ?? []) {
@@ -233,12 +233,17 @@ export default async function PerformancePage() {
 
   const testOrder = [...STRENGTH_TESTS, ...SWIM_TESTS];
 
+  // Only include blocks that have at least one result, regardless of status
+  const blocksWithResults = blocksRaw.filter(b =>
+    Object.values(templateMap).some(tmpl => tmpl.byBlock[b.id] !== undefined)
+  );
+
   const testingMetrics: TestingMetricHistory[] = Object.values(templateMap)
     .map(tmpl => ({
       name:        tmpl.name,
       unit:        tmpl.unit,
       metric_type: tmpl.metric_type,
-      entries:     completedBlocks.map(block => ({
+      entries:     blocksWithResults.map(block => ({
         weekNumber: block.week_number,
         value:      tmpl.byBlock[block.id] ?? null,
       })),
