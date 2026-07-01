@@ -158,6 +158,13 @@ export function WeekPlannerBoard({
   }, [addingDateStr]);
 
   useEffect(() => {
+    if (!addingDateStr) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [addingDateStr]);
+
+  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
@@ -293,7 +300,7 @@ export function WeekPlannerBoard({
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl flex flex-col max-h-[85vh]"
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl flex flex-col max-h-[90dvh] sm:max-h-[85vh]"
           >
             {/* header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3">
@@ -363,7 +370,7 @@ export function WeekPlannerBoard({
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Search sessions…"
-                  className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring/40"
+                  className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-ring/40"
                 />
               </div>
             </div>
@@ -447,7 +454,10 @@ export function WeekPlannerBoard({
               )}
             </div>
 
-            <div className="px-5 py-3 border-t border-border">
+            <div
+              className="px-5 py-3 border-t border-border"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            >
               <button
                 type="button"
                 onClick={closeAdd}
