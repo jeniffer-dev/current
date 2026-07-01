@@ -111,8 +111,8 @@ export default async function PlannerPage({
   const weekStartStr = toDateStr(weekStart);
   const weekEndStr = toDateStr(weekEnd);
 
-  // Fetch phases + gym templates + swim templates + training days in parallel
-  const [{ data: phasesData }, { data: gymTemplatesData }, { data: swimTemplatesData }, { data: trainingDaysData }] =
+  // Fetch phases + gym templates + swim templates + training days + test sessions in parallel
+  const [{ data: phasesData }, { data: gymTemplatesData }, { data: swimTemplatesData }, { data: trainingDaysData }, { data: testSessionsData }] =
     await Promise.all([
       supabase
         .from('phases')
@@ -133,6 +133,13 @@ export default async function PlannerPage({
         .gte('date', weekStartStr)
         .lte('date', weekEndStr)
         .order('date', { ascending: true }),
+      supabase
+        .from('testing_sessions')
+        .select('id, session_label, session_type, date, testing_blocks!inner(macrocycle_id)')
+        .eq('testing_blocks.macrocycle_id', macrocycle.id)
+        .lte('date', weekEndStr)
+        .not('date', 'is', null)
+        .order('date', { ascending: true }),
     ]);
 
   const phases: Phase[] = (phasesData ?? []) as Phase[];
@@ -147,28 +154,47 @@ export default async function PlannerPage({
   const byDate       = new Map<string, TrainingDay>(trainingDays.map(d => [d.date, d]));
 
   // Fetch training_day_sessions for all days in this week
+  // + check which test sessions have been completed anywhere (to hide them from the Tests tab)
   const trainingDayIds = trainingDays.map(d => d.id);
+  const testSessionIds = (testSessionsData ?? []).map(s => s.id);
   const sessionsByDayId = new Map<string, SessionStatus[]>();
+  const completedTestIds = new Set<string>();
 
-  if (trainingDayIds.length > 0) {
-    const { data: sessionsRaw } = await supabase
-      .from('training_day_sessions')
-      .select('id, training_day_id, session_name, session_type, status, template_id')
-      .in('training_day_id', trainingDayIds)
-      .order('created_at', { ascending: true });
+  await Promise.all([
+    trainingDayIds.length > 0
+      ? supabase
+          .from('training_day_sessions')
+          .select('id, training_day_id, session_name, session_type, status, template_id')
+          .in('training_day_id', trainingDayIds)
+          .order('created_at', { ascending: true })
+          .then(({ data }) => {
+            for (const s of data ?? []) {
+              const list = sessionsByDayId.get(s.training_day_id) ?? [];
+              list.push({
+                id:           s.id,
+                session_name: s.session_name,
+                session_type: s.session_type,
+                status:       s.status as 'planned' | 'completed' | 'skipped',
+                template_id:  s.template_id ?? null,
+              });
+              sessionsByDayId.set(s.training_day_id, list);
+            }
+          })
+      : Promise.resolve(),
 
-    for (const s of sessionsRaw ?? []) {
-      const list = sessionsByDayId.get(s.training_day_id) ?? [];
-      list.push({
-        id:           s.id,
-        session_name: s.session_name,
-        session_type: s.session_type,
-        status:       s.status as 'planned' | 'completed' | 'skipped',
-        template_id:  s.template_id ?? null,
-      });
-      sessionsByDayId.set(s.training_day_id, list);
-    }
-  }
+    testSessionIds.length > 0
+      ? supabase
+          .from('training_day_sessions')
+          .select('template_id')
+          .in('template_id', testSessionIds)
+          .eq('status', 'completed')
+          .then(({ data }) => {
+            for (const r of data ?? []) {
+              if (r.template_id) completedTestIds.add(r.template_id);
+            }
+          })
+      : Promise.resolve(),
+  ]);
 
   return (
     <div className="w-full max-w-[1120px] mx-auto px-5 pt-6 pb-8 sm:px-8 sm:pt-7 md:px-10 md:pt-8 space-y-4">
@@ -230,9 +256,18 @@ export default async function PlannerPage({
             recommended: false,
           })),
         ]}
+        testSessions={(testSessionsData ?? [])
+          .filter(s => !completedTestIds.has(s.id))
+          .map(s => ({
+            templateId:  s.id,
+            sessionName: s.session_label ?? s.session_type,
+            dateLabel:   new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          }))
+        }
         weekDates={weekDays.map(toDateStr)}
         macrocycleId={macrocycle.id}
         phaseId={weekPhase?.id ?? null}
+        phaseType={weekPhase?.phase_type ?? null}
       />
     </div>
   );

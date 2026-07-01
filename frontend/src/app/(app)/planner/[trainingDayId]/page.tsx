@@ -6,6 +6,7 @@ import { GymSessionCard } from '@/features/day-view/gym-session-card';
 import { SwimSessionCard } from '@/features/day-view/swim-session-card';
 import { RecoveryCard } from '@/features/day-view/recovery-card';
 import { GenericSessionCard } from '@/features/day-view/generic-session-card';
+import { ConditioningSessionCard } from '@/features/day-view/conditioning-session-card';
 
 // ── types ─────────────────────────────────────────────────────
 
@@ -49,9 +50,10 @@ function parseSessions(sessionType: string): string[] {
   return sessionType.split('/').map(s => s.trim()).filter(Boolean);
 }
 
-function isGym(session: string)      { return /^gym\s+/i.test(session); }
-function isSwim(session: string)     { return /\bswim\b/i.test(session); }
-function isRecovery(session: string) { return /^recovery$/i.test(session.trim()); }
+function isGym(session: string)          { return /^gym\s+/i.test(session); }
+function isSwim(session: string)         { return /\bswim\b/i.test(session); }
+function isRecovery(session: string)     { return /^recovery$/i.test(session.trim()); }
+function isConditioning(session: string) { return /^(aerobic|anaerobic|alactic)\s+session\s+\d+$/i.test(session.trim()); }
 
 function gymTemplateName(session: string): string {
   return session.replace(/^gym\s+/i, '').trim();
@@ -319,7 +321,18 @@ export default async function DayViewPage({
                 );
               }
 
-              return <GenericSessionCard key={i} sessionName={session} />;
+              if (isConditioning(session)) {
+                return (
+                  <ConditioningSessionCard
+                    key={i}
+                    sessionName={session}
+                    sessionRecord={sessionRecord}
+                    trainingDayId={trainingDayId}
+                  />
+                );
+              }
+
+              return <GenericSessionCard key={i} sessionName={session} sessionRecord={sessionRecord} trainingDayId={trainingDayId} />;
             })}
           </div>
         )}

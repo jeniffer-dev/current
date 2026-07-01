@@ -17,10 +17,12 @@ export function ConsistencyCard({
   const completed  = trackable.filter(s => s.status === 'completed').length;
   const pct        = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-  const gym        = trackable.filter(s => s.session_type === 'gym');
-  const gymDone    = gym.filter(s => s.status === 'completed').length;
-  const swim       = trackable.filter(s => s.session_type === 'swim');
-  const swimDone   = swim.filter(s => s.status === 'completed').length;
+  const gym              = trackable.filter(s => s.session_type === 'gym');
+  const gymDone          = gym.filter(s => s.status === 'completed').length;
+  const swim             = trackable.filter(s => s.session_type === 'swim');
+  const swimDone         = swim.filter(s => s.status === 'completed').length;
+  const conditioning     = trackable.filter(s => s.session_type === 'conditioning');
+  const conditioningDone = conditioning.filter(s => s.status === 'completed').length;
 
   return (
     <Card>
@@ -65,6 +67,14 @@ export function ConsistencyCard({
                   <span className="text-xs text-foreground/60">Swim</span>
                   <span className="text-xs font-medium tabular-nums text-foreground/70">
                     {swimDone} / {swim.length}
+                  </span>
+                </div>
+              )}
+              {conditioning.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground/60">Conditioning</span>
+                  <span className="text-xs font-medium tabular-nums text-foreground/70">
+                    {conditioningDone} / {conditioning.length}
                   </span>
                 </div>
               )}

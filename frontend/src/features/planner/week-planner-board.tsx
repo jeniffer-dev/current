@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Dumbbell, Waves, Leaf, Circle, X, Check, Minus, Plus, Search, Star } from 'lucide-react';
+import { Dumbbell, Waves, Leaf, Circle, CheckCircle2, X, Check, Minus, Plus, Search, Star, FlaskConical, Activity } from 'lucide-react';
 import { planSession, unscheduleSession } from '@/app/(app)/planner/actions';
+import { updateSessionStatus } from '@/app/(app)/planner/[trainingDayId]/actions';
 import { recurringActivities } from './recurring-activities';
+import { conditioningSessions, conditioningTypeForPhase, conditioningLabel } from './conditioning-catalog';
 
 type SessionItem = {
   id:           string;
@@ -45,18 +47,27 @@ type PlanItem = {
 type Props = {
   weekDays:     BoardDay[];
   catalog:      CatalogItem[];
+  testSessions: TestSessionItem[];
   weekDates:    string[];
   macrocycleId: string;
   phaseId:      string | null;
+  phaseType:    string | null;
 };
 
 type OptimisticAction =
   | { type: 'assign'; dateStr: string; session: SessionItem }
-  | { type: 'remove'; sessionId: string };
+  | { type: 'remove'; sessionId: string }
+  | { type: 'updateStatus'; sessionId: string; status: SessionItem['status'] };
 
-type Tab = 'gym' | 'swim' | 'other';
+type Tab = 'gym' | 'swim' | 'other' | 'conditioning' | 'test';
 
-function SessionIcon({ sessionType }: { sessionType: string }) {
+type TestSessionItem = {
+  templateId:  string;
+  sessionName: string;
+  dateLabel:   string;
+};
+
+function SessionIcon({ sessionType, sessionName }: { sessionType: string; sessionName?: string }) {
   const lower = sessionType.toLowerCase();
   if (lower.includes('swim')) {
     return <Waves className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--current-primary)' }} />;
@@ -66,6 +77,15 @@ function SessionIcon({ sessionType }: { sessionType: string }) {
   }
   if (lower.includes('gym')) {
     return <Dumbbell className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--current-load)' }} />;
+  }
+  if (lower.includes('conditioning')) {
+    return <Activity className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--current-load)' }} />;
+  }
+  if (sessionName?.toLowerCase().includes('uwr')) {
+    return <span className="text-[13px] leading-none shrink-0" aria-label="UWR">🤿</span>;
+  }
+  if (lower.includes('test')) {
+    return <FlaskConical className="h-3.5 w-3.5 shrink-0 text-violet-400" />;
   }
   return <Circle className="h-3 w-3 shrink-0 text-muted-foreground/35" />;
 }
@@ -79,9 +99,11 @@ function StatusDot({ status }: { status: SessionItem['status'] }) {
 export function WeekPlannerBoard({
   weekDays,
   catalog,
+  testSessions,
   weekDates,
   macrocycleId,
   phaseId,
+  phaseType,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [addingDateStr, setAddingDateStr] = useState<string | null>(null);
@@ -99,9 +121,17 @@ export function WeekPlannerBoard({
             : d,
         );
       }
+      if (action.type === 'remove') {
+        return state.map(d => ({
+          ...d,
+          sessions: d.sessions.filter(s => s.id !== action.sessionId),
+        }));
+      }
       return state.map(d => ({
         ...d,
-        sessions: d.sessions.filter(s => s.id !== action.sessionId),
+        sessions: d.sessions.map(s =>
+          s.id === action.sessionId ? { ...s, status: action.status } : s
+        ),
       }));
     },
   );
@@ -214,6 +244,19 @@ export function WeekPlannerBoard({
     });
   }
 
+  function toggleComplete(trainingDayId: string | null, session: SessionItem) {
+    if (!trainingDayId || session.id.startsWith('temp-')) return;
+    const next: SessionItem['status'] = session.status === 'completed' ? 'planned' : 'completed';
+    startTransition(async () => {
+      applyOptimistic({ type: 'updateStatus', sessionId: session.id, status: next });
+      try {
+        await updateSessionStatus(session.id, next, trainingDayId);
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : 'Could not update session');
+      }
+    });
+  }
+
   // ── modal lists ─────────────────────────────────────────────
   const qLower = query.trim().toLowerCase();
   const matches = (text: string) => qLower === '' || text.toLowerCase().includes(qLower);
@@ -223,6 +266,14 @@ export function WeekPlannerBoard({
   const gymOther       = gymItems.filter(c => !c.recommended);
   const swimItems = catalog.filter(c => c.sessionType === 'swim' && !scheduledTemplateIds.has(c.templateId) && matches(c.sessionName));
   const otherItems = recurringActivities.filter(a => matches(a.label));
+  const testItems  = testSessions.filter(t => !scheduledTemplateIds.has(t.templateId) && matches(t.sessionName));
+  const hasTests   = testSessions.length > 0;
+
+  const activeConditioningType = conditioningTypeForPhase(phaseType);
+  const weekHasConditioning    = weekSessions.some(w => w.session.session_type === 'conditioning');
+  const conditioningItems      = conditioningSessions.filter(
+    s => s.type === activeConditioningType && matches(s.name),
+  );
 
   return (
     <>
@@ -242,10 +293,12 @@ export function WeekPlannerBoard({
               <div className="flex flex-col mb-1.5">
                 {day.sessions.map(session => {
                   const isTemp = session.id.startsWith('temp-');
+                  const isDone = session.status === 'completed';
+                  const isSkipped = session.status === 'skipped';
                   const rowInner = (
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <SessionIcon sessionType={session.session_type} />
-                      <span className={`text-sm truncate ${session.status === 'skipped' ? 'line-through text-muted-foreground/50' : 'text-foreground/90'}`}>
+                      <SessionIcon sessionType={session.session_type} sessionName={session.session_name} />
+                      <span className={`text-sm truncate ${isSkipped ? 'line-through text-muted-foreground/50' : isDone ? 'text-muted-foreground/60' : 'text-foreground/90'}`}>
                         {session.session_name}
                       </span>
                     </div>
@@ -255,6 +308,20 @@ export function WeekPlannerBoard({
                       key={session.id}
                       className="group flex items-center gap-2 py-1"
                     >
+                      <button
+                        type="button"
+                        onClick={() => toggleComplete(day.trainingDayId, session)}
+                        disabled={isPending || isTemp}
+                        aria-label={isDone ? `Reopen ${session.session_name}` : `Complete ${session.session_name}`}
+                        className="shrink-0 p-0.5 disabled:opacity-30 transition-colors"
+                      >
+                        {isDone
+                          ? <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--current-primary)' }} />
+                          : isSkipped
+                          ? <Minus className="h-4 w-4 text-muted-foreground/35" />
+                          : <Circle className="h-4 w-4 text-muted-foreground/25 hover:text-muted-foreground/60" />
+                        }
+                      </button>
                       {day.trainingDayId && !isTemp ? (
                         <Link href={`/planner/${day.trainingDayId}`} className="min-w-0 flex-1 hover:opacity-60 transition-opacity">
                           {rowInner}
@@ -345,18 +412,18 @@ export function WeekPlannerBoard({
 
             {/* tabs */}
             <div className="flex gap-1 px-5 pt-3">
-              {(['gym', 'swim', 'other'] as Tab[]).map(t => (
+              {(['gym', 'swim', 'other', 'conditioning', ...(hasTests ? ['test' as Tab] : [])] as Tab[]).map(t => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
+                  className={`flex-1 rounded-lg px-1 py-1.5 text-xs font-medium capitalize transition-colors ${
                     tab === t
                       ? 'bg-primary/[0.08] text-foreground'
                       : 'text-muted-foreground/55 hover:text-foreground'
                   }`}
                 >
-                  {t}
+                  {t === 'test' ? 'Tests' : t}
                 </button>
               ))}
             </div>
@@ -452,6 +519,58 @@ export function WeekPlannerBoard({
                   {otherItems.length === 0 && <EmptyHint />}
                 </>
               )}
+
+              {tab === 'conditioning' && (
+                weekHasConditioning ? (
+                  <DayLimitHint message="A conditioning session is already scheduled this week." />
+                ) : (
+                  <>
+                    <p className="flex items-center gap-1 text-[10px] font-semibold tracking-wide uppercase text-muted-foreground/40 mb-1">
+                      <Star className="h-3 w-3" /> {conditioningLabel(activeConditioningType)} — {phaseType ?? 'current phase'}
+                    </p>
+                    {conditioningItems.map(item => (
+                      <CatalogRow
+                        key={item.name}
+                        icon={<SessionIcon sessionType="conditioning" />}
+                        label={item.name}
+                        sublabel={item.description}
+                        onAdd={() =>
+                          assign(activeDay.dateStr, {
+                            sessionName: item.name,
+                            sessionType: 'conditioning',
+                            templateId:  null,
+                          })
+                        }
+                      />
+                    ))}
+                    {conditioningItems.length === 0 && <EmptyHint />}
+                  </>
+                )
+              )}
+
+              {tab === 'test' && (
+                <>
+                  {testItems.map(item => (
+                    <CatalogRow
+                      key={item.templateId}
+                      icon={<SessionIcon sessionType="test" />}
+                      label={`${item.sessionName} · ${item.dateLabel}`}
+                      onAdd={() =>
+                        assign(activeDay.dateStr, {
+                          sessionName: item.sessionName,
+                          sessionType: 'test',
+                          templateId:  item.templateId,
+                        })
+                      }
+                    />
+                  ))}
+                  {testItems.length === 0 && (
+                    testSessions.length > 0
+                      ? <DayLimitHint message="All tests for this week are already scheduled." />
+                      : <EmptyHint />
+                  )}
+                </>
+              )}
             </div>
 
             <div
@@ -496,7 +615,7 @@ function DaySessionRow({
   const isTemp = session.id.startsWith('temp-');
   return (
     <div className="group flex items-center gap-2.5 py-1 text-sm">
-      <SessionIcon sessionType={session.session_type} />
+      <SessionIcon sessionType={session.session_type} sessionName={session.session_name} />
       <span className="truncate flex-1 text-foreground/90">{session.session_name}</span>
       <button
         type="button"
@@ -514,21 +633,30 @@ function DaySessionRow({
 function CatalogRow({
   icon,
   label,
+  sublabel,
   onAdd,
 }: {
-  icon:  React.ReactNode;
-  label: string;
-  onAdd: () => void;
+  icon:      React.ReactNode;
+  label:     string;
+  sublabel?: string;
+  onAdd:     () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onAdd}
-      className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm hover:border-primary/40 hover:bg-primary/[0.03] transition-colors"
+      className="flex w-full items-start gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left hover:border-primary/40 hover:bg-primary/[0.03] transition-colors"
     >
-      {icon}
-      <span className="truncate flex-1">{label}</span>
-      <Plus className="h-3.5 w-3.5 text-muted-foreground/40" />
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm truncate">{label}</span>
+        {sublabel && (
+          <span className="block text-[11px] text-muted-foreground/50 leading-relaxed mt-0.5 line-clamp-2">
+            {sublabel}
+          </span>
+        )}
+      </span>
+      <Plus className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />
     </button>
   );
 }

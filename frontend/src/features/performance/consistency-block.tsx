@@ -49,8 +49,11 @@ export function ConsistencyBlock({
   const swimSessions    = trackable.filter(s => s.sessionType === 'swim');
   const swimCompleted   = swimSessions.filter(s => s.status === 'completed').length;
 
-  const uwrSessions     = trackable.filter(s => s.sessionType === 'other');
-  const uwrCompleted    = uwrSessions.filter(s => s.status === 'completed').length;
+  const uwrSessions          = trackable.filter(s => s.sessionType === 'other');
+  const uwrCompleted         = uwrSessions.filter(s => s.status === 'completed').length;
+
+  const conditioningSessionsList = trackable.filter(s => s.sessionType === 'conditioning');
+  const conditioningCompleted    = conditioningSessionsList.filter(s => s.status === 'completed').length;
 
   const daysLeft = phaseEndDate
     ? Math.max(
@@ -117,6 +120,14 @@ export function ConsistencyBlock({
               <span className="text-xs text-foreground/60">UWR Sessions</span>
               <span className="text-xs font-medium tabular-nums text-foreground/70">
                 {uwrCompleted} / {uwrSessions.length}
+              </span>
+            </div>
+          )}
+          {conditioningSessionsList.length > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-foreground/60">Conditioning</span>
+              <span className="text-xs font-medium tabular-nums text-foreground/70">
+                {conditioningCompleted} / {conditioningSessionsList.length}
               </span>
             </div>
           )}

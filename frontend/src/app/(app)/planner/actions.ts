@@ -78,6 +78,21 @@ export async function planSession({
     .eq('date', date)
     .maybeSingle();
 
+  // One-per-week guard for conditioning sessions.
+  if (sessionType === 'conditioning') {
+    const { data: conditioningThisWeek } = await supabase
+      .from('training_day_sessions')
+      .select('id, training_days!inner(date)')
+      .eq('user_id', user.id)
+      .eq('session_type', 'conditioning')
+      .in('training_days.date', weekDates)
+      .limit(1);
+
+    if (conditioningThisWeek && conditioningThisWeek.length > 0) {
+      throw new Error('A conditioning session is already scheduled this week.');
+    }
+  }
+
   // One-per-day guard: at most one gym and one swim session on the same day.
   // Other / recovery sessions are unlimited.
   if (existing && (sessionType === 'gym' || sessionType === 'swim')) {
