@@ -11,6 +11,18 @@ export type SaveState = {
 
 // ── helpers ───────────────────────────────────────────────────
 
+// Parses "Back Squat 3RM" → 3, "Supinated Pull Up 1RM" → 1, otherwise null.
+function parseRepMax(templateName: string): number | null {
+  const m = templateName.match(/(\d+)RM$/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Epley: weight × (1 + reps/30). For 1RM tests, result_value is the 1RM directly.
+function epley1RM(resultValue: number, repMax: number): number {
+  if (repMax <= 1) return resultValue;
+  return resultValue * (1 + repMax / 30);
+}
+
 function parseResultValue(raw: string, metricType: string): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -54,17 +66,30 @@ export async function saveTestingResults(
     return { success: false, error: 'Missing required context.' };
   }
 
+  // ── fetch template metadata for 1RM calculation ──────────
+
+  const { data: templates } = await supabase
+    .from('test_templates')
+    .select('id, name, calculates_estimated_1rm')
+    .in('id', templateIds)
+    .eq('user_id', user.id);
+
+  const templateMap = new Map(
+    (templates ?? []).map(t => [t.id, t])
+  );
+
   // ── build insert rows ─────────────────────────────────────
 
   const inserts: {
-    user_id:            string;
-    test_template_id:   string;
-    testing_block_id:   string;
-    testing_session_id: string;
-    macrocycle_id:      string;
-    phase_id:           string | null;
-    result_value:       number;
-    notes:              string | null;
+    user_id:              string;
+    test_template_id:     string;
+    testing_block_id:     string;
+    testing_session_id:   string;
+    macrocycle_id:        string;
+    phase_id:             string | null;
+    result_value:         number;
+    estimated_1rm_kg:     number | null;
+    notes:                string | null;
   }[] = [];
 
   for (const templateId of templateIds) {
@@ -75,6 +100,17 @@ export async function saveTestingResults(
     const resultValue = parseResultValue(raw, metricType);
     if (resultValue === null) continue;
 
+    const tmpl   = templateMap.get(templateId);
+    const repMax = tmpl ? parseRepMax(tmpl.name) : null;
+    let estimated1RM: number | null = null;
+
+    if (repMax === 1) {
+      // 1RM test: result_value is the 1RM directly
+      estimated1RM = resultValue;
+    } else if (tmpl?.calculates_estimated_1rm && repMax !== null) {
+      estimated1RM = Math.round(epley1RM(resultValue, repMax) * 10) / 10;
+    }
+
     inserts.push({
       user_id:            user.id,
       test_template_id:   templateId,
@@ -83,6 +119,7 @@ export async function saveTestingResults(
       macrocycle_id:      macrocycleId,
       phase_id:           phaseId || null,
       result_value:       resultValue,
+      estimated_1rm_kg:   estimated1RM,
       notes:              notes.trim() || null,
     });
   }

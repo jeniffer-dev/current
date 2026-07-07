@@ -7,6 +7,8 @@ import { SwimSessionCard } from '@/features/day-view/swim-session-card';
 import { RecoveryCard } from '@/features/day-view/recovery-card';
 import { GenericSessionCard } from '@/features/day-view/generic-session-card';
 import { ConditioningSessionCard } from '@/features/day-view/conditioning-session-card';
+import { buildTestSuggestion, buildLogSuggestion } from '@/lib/suggested-weight';
+import type { WeightSuggestion } from '@/lib/suggested-weight';
 
 // ── types ─────────────────────────────────────────────────────
 
@@ -19,7 +21,7 @@ type GymExercise = {
   intensity_type: string;
   intensity_value: string | null;
   notes: string | null;
-  exercises: { id: string; name: string; is_loggable: boolean };
+  exercises: { id: string; name: string; is_loggable: boolean; primary_test_template_id: string | null };
 };
 
 type GymTemplate = {
@@ -118,7 +120,7 @@ export default async function DayViewPage({
   // Fetch phase, macrocycle, and session records in parallel
   const [{ data: phase }, { data: macrocycle }, { data: sessionRecordsRaw }] = await Promise.all([
     trainingDay.phase_id
-      ? supabase.from('phases').select('id, name, phase_type').eq('id', trainingDay.phase_id).maybeSingle()
+      ? supabase.from('phases').select('id, name, phase_type, start_date').eq('id', trainingDay.phase_id).maybeSingle()
       : Promise.resolve({ data: null }),
     trainingDay.macrocycle_id
       ? supabase.from('macrocycles').select('id, start_date').eq('id', trainingDay.macrocycle_id).maybeSingle()
@@ -155,7 +157,7 @@ export default async function DayViewPage({
         id, name, focus,
         gym_session_exercises (
           id, order_index, sets, reps, rpe, intensity_type, intensity_value, notes,
-          exercises ( id, name, is_loggable )
+          exercises ( id, name, is_loggable, primary_test_template_id )
         )
       `)
       .eq('name', name)
@@ -207,6 +209,83 @@ export default async function DayViewPage({
         exerciseLogsBySessionId.set(log.training_day_session_id, []);
       }
       exerciseLogsBySessionId.get(log.training_day_session_id)!.push(log as ExerciseLog);
+    }
+  }
+
+  // ── Suggested weights ────────────────────────────────────────
+  // Collect loggable exercises, fetch latest test results + historical logs,
+  // then build a suggestion per exercise (test-based > log-based).
+
+  const allLoggableExercises = Object.values(gymTemplates)
+    .flatMap(t => t?.gym_session_exercises ?? [])
+    .filter(ex => ex.exercises.is_loggable);
+
+  const testTemplateIds = [...new Set(
+    allLoggableExercises
+      .map(ex => ex.exercises.primary_test_template_id)
+      .filter((id): id is string => !!id)
+  )];
+
+  const allLoggableExerciseIds = [...new Set(
+    allLoggableExercises.map(ex => ex.exercises.id)
+  )];
+
+  const [testResultsResult, histLogsResult] = await Promise.all([
+    testTemplateIds.length > 0
+      ? supabase
+          .from('test_results')
+          .select('test_template_id, estimated_1rm_kg')
+          .in('test_template_id', testTemplateIds)
+          .not('estimated_1rm_kg', 'is', null)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] as Array<{ test_template_id: string; estimated_1rm_kg: number | null }> }),
+    allLoggableExerciseIds.length > 0
+      ? supabase
+          .from('exercise_logs')
+          .select('exercise_id, weight, reps')
+          .in('exercise_id', allLoggableExerciseIds)
+          .order('logged_at', { ascending: false })
+      : Promise.resolve({ data: [] as Array<{ exercise_id: string; weight: number | null; reps: number | null }> }),
+  ]);
+
+  // Latest result per test template (first row = most recent due to desc ordering)
+  const latestTestResult = new Map<string, number>();
+  for (const r of testResultsResult.data ?? []) {
+    if (!latestTestResult.has(r.test_template_id) && r.estimated_1rm_kg != null) {
+      latestTestResult.set(r.test_template_id, r.estimated_1rm_kg);
+    }
+  }
+
+  // Latest log per exercise (first row = most recent)
+  const latestLogByExercise = new Map<string, { weight: number; reps: number }>();
+  for (const l of histLogsResult.data ?? []) {
+    if (!latestLogByExercise.has(l.exercise_id) && l.weight != null && l.reps != null) {
+      latestLogByExercise.set(l.exercise_id, { weight: l.weight, reps: l.reps });
+    }
+  }
+
+  const phaseType   = phase?.phase_type ?? '';
+  const weekInPhase = phase && 'start_date' in phase && phase.start_date
+    ? getWeekNumber(phase.start_date, trainingDay.date)
+    : 1;
+
+  const suggestionsByExerciseId: Record<string, WeightSuggestion> = {};
+
+  for (const ex of allLoggableExercises) {
+    const exId        = ex.exercises.id;
+    const testTmplId  = ex.exercises.primary_test_template_id;
+
+    if (testTmplId) {
+      const oneRM = latestTestResult.get(testTmplId);
+      if (oneRM != null) {
+        const s = buildTestSuggestion(oneRM, phaseType, weekInPhase);
+        if (s) { suggestionsByExerciseId[exId] = s; continue; }
+      }
+    }
+
+    const lastLog = latestLogByExercise.get(exId);
+    if (lastLog) {
+      suggestionsByExerciseId[exId] = buildLogSuggestion(lastLog.weight, lastLog.reps);
     }
   }
 
@@ -303,6 +382,9 @@ export default async function DayViewPage({
                     sessionRecord={sessionRecord}
                     trainingDayId={trainingDayId}
                     exerciseLogs={sessionRecord ? (exerciseLogsBySessionId.get(sessionRecord.id) ?? []) : []}
+                    suggestionsByExerciseId={suggestionsByExerciseId}
+                    phaseType={phaseType}
+                    weekInPhase={weekInPhase}
                   />
                 );
               }

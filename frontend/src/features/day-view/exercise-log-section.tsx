@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { upsertExerciseLog } from '@/app/(app)/planner/[trainingDayId]/actions';
+import type { WeightSuggestion } from '@/lib/suggested-weight';
 
 export type ExerciseLog = {
   id:          string;
@@ -18,16 +19,28 @@ function formatTopSet(weight: number | null, reps: number | null): string {
   return '—';
 }
 
+const badgeClass: Record<WeightSuggestion['source'], string> = {
+  test: 'bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400',
+  log:  'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+};
+
+const badgeLabel: Record<WeightSuggestion['source'], string> = {
+  test: 'Test-based',
+  log:  'Last session',
+};
+
 export function ExerciseLogSection({
   exerciseId,
   sessionId,
   trainingDayId,
   existingLog,
+  suggestion,
 }: {
   exerciseId:    string;
   sessionId:     string;
   trainingDayId: string;
   existingLog:   ExerciseLog | null;
+  suggestion?:   WeightSuggestion | null;
 }) {
   const [log, setLog]           = useState<ExerciseLog | null>(existingLog);
   const [open, setOpen]         = useState(false);
@@ -36,8 +49,16 @@ export function ExerciseLogSection({
   const [isPending, startTransition] = useTransition();
 
   function handleOpen() {
-    setWeight(log?.weight?.toString() ?? '');
-    setReps(log?.reps?.toString()     ?? '');
+    if (log) {
+      setWeight(log.weight?.toString() ?? '');
+      setReps(log.reps?.toString()     ?? '');
+    } else if (suggestion) {
+      setWeight(suggestion.weight.toString());
+      setReps(suggestion.reps.toString());
+    } else {
+      setWeight('');
+      setReps('');
+    }
     setOpen(true);
   }
 
@@ -60,7 +81,19 @@ export function ExerciseLogSection({
   // ── editing form ──────────────────────────────────────────────
   if (open) {
     return (
-      <div className="mt-3 space-y-2.5">
+      <div className="mt-3 space-y-2">
+        {suggestion && !log && (
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass[suggestion.source]}`}>
+              {badgeLabel[suggestion.source]}
+            </span>
+            {suggestion.source === 'test' && suggestion.pct != null && (
+              <span className="text-[10px] text-muted-foreground/40">
+                {Math.round(suggestion.pct * 100)}% of est. 1RM
+              </span>
+            )}
+          </div>
+        )}
         <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40">Top Set</p>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
@@ -127,6 +160,28 @@ export function ExerciseLogSection({
   }
 
   // ── no log yet ────────────────────────────────────────────────
+  if (suggestion) {
+    return (
+      <div className="mt-2 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-xs tabular-nums text-foreground/55">
+            {suggestion.weight} kg · {suggestion.reps} reps
+          </span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass[suggestion.source]}`}>
+            {badgeLabel[suggestion.source]}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="text-xs text-muted-foreground/30 hover:text-muted-foreground/55 transition-colors"
+        >
+          Log top set
+        </button>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"

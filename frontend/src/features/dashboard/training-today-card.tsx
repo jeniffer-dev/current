@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Check, Circle, Minus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -31,8 +32,8 @@ export function TrainingTodayCard({
   trainingDay: TrainingDay | null;
   sessions: SessionRecord[];
 }) {
-  return (
-    <Card>
+  const inner = (
+    <Card className={trainingDay ? 'h-full transition-shadow hover:shadow-md cursor-pointer' : undefined}>
       <CardContent className="p-5 h-full flex flex-col">
         <p className="text-xs uppercase tracking-widest text-muted-foreground/45">Today</p>
 
@@ -49,6 +50,9 @@ export function TrainingTodayCard({
       </CardContent>
     </Card>
   );
+
+  if (!trainingDay) return inner;
+  return <Link href={`/planner/${trainingDay.id}`} className="h-full">{inner}</Link>;
 }
 
 function SessionList({
@@ -82,30 +86,29 @@ function SessionList({
 
       {/* Session list */}
       <div className="space-y-2">
-        {allDone ? (
-          <p className="text-xs text-muted-foreground/50">All sessions completed.</p>
-        ) : (
-          allSessions.map((session, i) => {
-            const status = isRecovery(session) ? 'recovery' : (byName.get(session) ?? 'planned');
-            const isCompleted = status === 'completed';
-            const isSkipped   = status === 'skipped';
-            return (
-              <div key={i} className="flex items-center gap-2">
-                {isRecovery(session) ? (
-                  <Circle className="h-2.5 w-2.5 shrink-0 text-muted-foreground/20" />
-                ) : isCompleted ? (
-                  <Check className="h-3 w-3 shrink-0 text-teal-600" />
-                ) : isSkipped ? (
-                  <Minus className="h-3 w-3 shrink-0 text-slate-400" />
-                ) : (
-                  <Circle className="h-2.5 w-2.5 shrink-0 text-muted-foreground/25" />
-                )}
-                <p className={`text-sm truncate ${isCompleted ? 'text-muted-foreground/50' : isSkipped ? 'text-muted-foreground/35 line-through' : 'font-medium'}`}>
-                  {session}
-                </p>
-              </div>
-            );
-          })
+        {allSessions.map((session, i) => {
+          const status = isRecovery(session) ? 'recovery' : (byName.get(session) ?? 'planned');
+          const isCompleted = status === 'completed';
+          const isSkipped   = status === 'skipped';
+          return (
+            <div key={i} className="flex items-center gap-2">
+              {isRecovery(session) ? (
+                <Circle className="h-2.5 w-2.5 shrink-0 text-muted-foreground/20" />
+              ) : isCompleted ? (
+                <Check className="h-3 w-3 shrink-0 text-teal-600" />
+              ) : isSkipped ? (
+                <Minus className="h-3 w-3 shrink-0 text-slate-400" />
+              ) : (
+                <Circle className="h-2.5 w-2.5 shrink-0 text-muted-foreground/25" />
+              )}
+              <p className={`text-sm truncate ${isCompleted ? 'text-muted-foreground/50' : isSkipped ? 'text-muted-foreground/35 line-through' : 'font-medium'}`}>
+                {session}
+              </p>
+            </div>
+          );
+        })}
+        {allDone && (
+          <p className="text-xs text-muted-foreground/50 pt-0.5">All sessions completed.</p>
         )}
       </div>
 

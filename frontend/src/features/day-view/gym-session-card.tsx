@@ -4,6 +4,8 @@ import { SessionStatusControl } from './session-status-control';
 import { SessionNotesInput } from './session-notes-input';
 import { ExerciseLogSection } from './exercise-log-section';
 import type { ExerciseLog } from './exercise-log-section';
+import { getWeeklyPrescription } from '@/lib/suggested-weight';
+import type { WeightSuggestion, WeekPrescription } from '@/lib/suggested-weight';
 
 type SessionRecord = {
   id: string;
@@ -22,7 +24,7 @@ type GymExercise = {
   intensity_type: string;
   intensity_value: string | null;
   notes: string | null;
-  exercises: { id: string; name: string; is_loggable: boolean };
+  exercises: { id: string; name: string; is_loggable: boolean; primary_test_template_id?: string | null };
 };
 
 type GymTemplate = {
@@ -64,6 +66,9 @@ const BLOCK_DEFS: Record<string, BlockDef> = {
   'glute-isolation': { letter: 'B', label: 'Glute Isolation', isCircuit: false },
   'activation':      { letter: 'C', label: 'Activation',      isCircuit: false },
   'core':            { letter: 'D', label: 'Core',            isCircuit: false },
+  // ACC blocks — letters omitted; label auto-derived from key for main-N / main-N-prep / accessory-N
+  'warmup':              { letter: '', label: 'Mobility & Strength Prep', isCircuit: false },
+  'accessories-circuit': { letter: '', label: 'Accessories Circuit',      isCircuit: true, rounds: 3 },
 };
 
 // ── block key inference from exercise notes ───────────────────
@@ -72,6 +77,7 @@ function extractBlockKey(notes: string | null): string {
   if (!notes) return 'other';
   const primary = notes.split('·')[0].trim().toLowerCase();
 
+  // ADP Day 1 & 2
   if (/lower circuit/.test(primary)) return 'lower-circuit';
   if (/upper circuit/.test(primary)) return 'upper-circuit';
   if (/core circuit/.test(primary))  return 'core-circuit';
@@ -79,11 +85,25 @@ function extractBlockKey(notes: string | null): string {
   if (/upper prep/.test(primary))    return 'upper-prep';
   if (/prehab/.test(primary))        return 'prehab';
 
-  // ADP Day 3 patterns
+  // ADP Day 3
   if (/main glute|glute strength|glute hypertrophy/.test(primary)) return 'glute-strength';
   if (/glute isolation|hip hinge accessory|unilateral glute/.test(primary)) return 'glute-isolation';
   if (/glute med|activation/.test(primary)) return 'activation';
   if (/^core$/.test(primary)) return 'core';
+
+  // ACC — dynamic main-N-prep / main-N / accessory-N keys so any number works
+  const mainPrepMatch = primary.match(/^main (\d+) prep$/);
+  if (mainPrepMatch) return `main-${mainPrepMatch[1]}-prep`;
+
+  const mainMatch = primary.match(/^main (\d+)$/);
+  if (mainMatch) return `main-${mainMatch[1]}`;
+
+  const accessoryMatch = primary.match(/^accessory (\d+)$/);
+  if (accessoryMatch) return `accessory-${accessoryMatch[1]}`;
+
+  if (/accessories circuit/.test(primary)) return 'accessories-circuit';
+  if (/^core x\d+/.test(primary))         return 'core-circuit';
+  if (/^mobility/.test(primary))           return 'warmup';
 
   return 'other';
 }
@@ -98,7 +118,13 @@ function extractExerciseNote(notes: string | null): string | null {
 
 // ── prescription ──────────────────────────────────────────────
 
-function prescription(ex: GymExercise): string {
+function prescription(ex: GymExercise, macroPrescription: WeekPrescription | null): string {
+  // "Macro %" sentinel — resolve from weekly prescription table
+  if (ex.intensity_type === 'percentage' && ex.rpe === 'Macro %' && macroPrescription) {
+    const p = macroPrescription;
+    return `${p.sets} × ${p.reps}  ·  ${p.pct * 100}%`;
+  }
+
   const reps = ex.reps ?? '—';
   // Circuit exercises have null sets — show just reps (sets = rounds, defined by block)
   const base = ex.sets !== null ? `${ex.sets} × ${reps}` : reps;
@@ -141,13 +167,21 @@ export function GymSessionCard({
   sessionRecord,
   trainingDayId,
   exerciseLogs,
+  suggestionsByExerciseId,
+  phaseType,
+  weekInPhase,
 }: {
-  sessionName:   string;
-  template:      GymTemplate | null;
-  sessionRecord?: SessionRecord;
-  trainingDayId?: string;
-  exerciseLogs?:  ExerciseLog[];
+  sessionName:              string;
+  template:                 GymTemplate | null;
+  sessionRecord?:           SessionRecord;
+  trainingDayId?:           string;
+  exerciseLogs?:            ExerciseLog[];
+  suggestionsByExerciseId?: Record<string, WeightSuggestion>;
+  phaseType?:               string;
+  weekInPhase?:             number;
 }) {
+  const macroPrescription = getWeeklyPrescription(phaseType ?? '', weekInPhase ?? 1);
+
   const exercises = template
     ? [...template.gym_session_exercises].sort((a, b) => a.order_index - b.order_index)
     : [];
@@ -224,7 +258,7 @@ export function GymSessionCard({
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground/60 tabular-nums shrink-0">
-                            {prescription(ex)}
+                            {prescription(ex, macroPrescription)}
                           </p>
                         </div>
                         {loggable && (
@@ -233,6 +267,7 @@ export function GymSessionCard({
                             sessionId={sessionRecord!.id}
                             trainingDayId={trainingDayId!}
                             existingLog={logByExerciseId.get(ex.exercises.id) ?? null}
+                            suggestion={suggestionsByExerciseId?.[ex.exercises.id] ?? null}
                           />
                         )}
                       </div>
@@ -271,7 +306,7 @@ export function GymSessionCard({
               <div key={ex.id} className="py-3 first:pt-0 last:pb-0">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">{ex.exercises.name}</p>
-                  <p className="text-sm text-muted-foreground/65 tabular-nums">{prescription(ex)}</p>
+                  <p className="text-sm text-muted-foreground/65 tabular-nums">{prescription(ex, macroPrescription)}</p>
                 </div>
                 {sessionRecord && trainingDayId && (
                   <ExerciseLogSection
@@ -279,6 +314,7 @@ export function GymSessionCard({
                     sessionId={sessionRecord.id}
                     trainingDayId={trainingDayId}
                     existingLog={logByExerciseId.get(ex.exercises.id) ?? null}
+                    suggestion={suggestionsByExerciseId?.[ex.exercises.id] ?? null}
                   />
                 )}
               </div>
