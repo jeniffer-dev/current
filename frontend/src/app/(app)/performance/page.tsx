@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
+import { epley1RM } from '@/lib/suggested-weight';
 import { TestingBlock } from '@/features/performance/testing-block';
 import { StrengthProgression } from '@/features/performance/strength-progression';
 import { SwimProgression } from '@/features/performance/swim-progression';
@@ -103,7 +104,10 @@ export default async function PerformancePage() {
 
     // ── exercise logs (training progression) ──────────────────
 
-    const progressionMap = new Map<string, ExerciseEntry[]>();
+    // Group by (exercise, date) keeping the top set per day (highest estimated 1RM).
+    // If a day has only null-estimated entries (weight logged without reps), keep one.
+    type DayBest = { weight: number | null; reps: number | null; estimated1RM: number | null };
+    const bestByExerciseDate = new Map<string, Map<string, DayBest>>();
 
     for (const log of logsRaw ?? []) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,15 +115,27 @@ export default async function PerformancePage() {
       const ex = Array.isArray(exRaw) ? exRaw[0] : exRaw;
       if (!ex?.is_loggable) continue;
 
-      if (!progressionMap.has(ex.name)) progressionMap.set(ex.name, []);
-      const entries = progressionMap.get(ex.name)!;
-      if (entries.length < 10) {
-        entries.push({
-          date:   (log.logged_at as string).split('T')[0],
-          weight: log.weight,
-          reps:   log.reps,
-        });
+      const date = (log.logged_at as string).split('T')[0];
+      const est  = log.weight && log.reps
+        ? Math.round(epley1RM(log.weight, log.reps) * 10) / 10
+        : null;
+
+      if (!bestByExerciseDate.has(ex.name)) bestByExerciseDate.set(ex.name, new Map());
+      const dayMap = bestByExerciseDate.get(ex.name)!;
+
+      const existing = dayMap.get(date);
+      if (!existing || (est !== null && (existing.estimated1RM === null || est > existing.estimated1RM))) {
+        dayMap.set(date, { weight: log.weight, reps: log.reps, estimated1RM: est });
       }
+    }
+
+    const progressionMap = new Map<string, ExerciseEntry[]>();
+    for (const [name, dayMap] of bestByExerciseDate) {
+      const entries: ExerciseEntry[] = [...dayMap.entries()]
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 20)
+        .map(([date, best]) => ({ date, weight: best.weight, reps: best.reps, estimated1RM: best.estimated1RM }));
+      progressionMap.set(name, entries);
     }
 
     exerciseProgressions = [...progressionMap.entries()].map(([name, entries]) => ({

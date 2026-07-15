@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { epley1RM } from '@/lib/suggested-weight';
 
 // ── types ─────────────────────────────────────────────────────
 
@@ -17,11 +18,6 @@ function parseRepMax(templateName: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
-// Epley: weight × (1 + reps/30). For 1RM tests, result_value is the 1RM directly.
-function epley1RM(resultValue: number, repMax: number): number {
-  if (repMax <= 1) return resultValue;
-  return resultValue * (1 + repMax / 30);
-}
 
 function parseResultValue(raw: string, metricType: string): number | null {
   const trimmed = raw.trim();

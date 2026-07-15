@@ -15,6 +15,11 @@ export function roundTo2_5(kg: number): number {
   return Math.round(kg / 2.5) * 2.5;
 }
 
+export function epley1RM(weight: number, reps: number): number {
+  if (reps <= 1) return weight;
+  return weight * (1 + reps / 30);
+}
+
 // ── weekly prescription ───────────────────────────────────────
 
 export type WeekPrescription = { sets: number; reps: number; pct: number };
