@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
 
@@ -35,7 +37,8 @@ export type Macrocycle = {
 
 export default async function MacrocyclePage() {
   const supabase = await createClient();
-  const today = new Date().toISOString().split('T')[0];
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
 
   const { data: macrocycles } = await supabase
     .from('macrocycles')

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { WeekNav } from '@/features/planner/week-nav';
 import { WeekPlannerBoard } from '@/features/planner/week-planner-board';
 
@@ -80,7 +82,8 @@ export default async function PlannerPage({
   searchParams: Promise<{ w?: string }>;
 }) {
   const supabase = await createClient();
-  const today = toDateStr(new Date());
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
   const params = await searchParams;
 
   // Fetch macrocycle
