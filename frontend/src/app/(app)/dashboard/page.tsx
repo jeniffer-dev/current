@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { MacrocycleCard } from '@/features/dashboard/macrocycle-card';
 import { PhaseCard } from '@/features/dashboard/phase-card';
 import { CountdownCard } from '@/features/dashboard/countdown-card';
@@ -21,7 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const today = new Date().toISOString().split('T')[0];
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
 
   // ── batch 1: macrocycle + today + latest note (all independent) ─
 

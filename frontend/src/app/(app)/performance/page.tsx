@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { epley1RM } from '@/lib/suggested-weight';
 import { TestingBlock } from '@/features/performance/testing-block';
 import { StrengthProgression } from '@/features/performance/strength-progression';
@@ -54,7 +56,8 @@ const phaseTints: Record<string, string> = {
 
 export default async function PerformancePage() {
   const supabase = await createClient();
-  const today = new Date().toISOString().split('T')[0];
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
 
   // ── macrocycle (needed for everything else) ─────────────────
 

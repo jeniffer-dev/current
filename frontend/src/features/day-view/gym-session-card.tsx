@@ -4,7 +4,6 @@ import { SessionStatusControl } from './session-status-control';
 import { SessionNotesInput } from './session-notes-input';
 import { ExerciseLogSection } from './exercise-log-section';
 import type { ExerciseLog } from './exercise-log-section';
-import { getWeeklyPrescription } from '@/lib/suggested-weight';
 import type { WeightSuggestion, WeekPrescription } from '@/lib/suggested-weight';
 
 type SessionRecord = {
@@ -118,10 +117,11 @@ function extractExerciseNote(notes: string | null): string | null {
 
 // ── prescription ──────────────────────────────────────────────
 
-function prescription(ex: GymExercise, macroPrescription: WeekPrescription | null): string {
-  // "Macro %" sentinel — resolve from weekly prescription table
-  if (ex.intensity_type === 'percentage' && ex.rpe === 'Macro %' && macroPrescription) {
-    const p = macroPrescription;
+function prescription(ex: GymExercise, resolvedPrescription: WeekPrescription | null): string {
+  // "Macro %" sentinel — resolved server-side, per exercise, from completed-
+  // exposure progression (see planner/[trainingDayId]/page.tsx)
+  if (ex.intensity_type === 'percentage' && ex.rpe === 'Macro %' && resolvedPrescription) {
+    const p = resolvedPrescription;
     return `${p.sets} × ${p.reps}  ·  ${p.pct * 100}%`;
   }
 
@@ -168,20 +168,16 @@ export function GymSessionCard({
   trainingDayId,
   exerciseLogs,
   suggestionsByExerciseId,
-  phaseType,
-  weekInPhase,
+  prescriptionsByExerciseId,
 }: {
-  sessionName:              string;
-  template:                 GymTemplate | null;
-  sessionRecord?:           SessionRecord;
-  trainingDayId?:           string;
-  exerciseLogs?:            ExerciseLog[];
-  suggestionsByExerciseId?: Record<string, WeightSuggestion>;
-  phaseType?:               string;
-  weekInPhase?:             number;
+  sessionName:                 string;
+  template:                    GymTemplate | null;
+  sessionRecord?:              SessionRecord;
+  trainingDayId?:              string;
+  exerciseLogs?:               ExerciseLog[];
+  suggestionsByExerciseId?:    Record<string, WeightSuggestion>;
+  prescriptionsByExerciseId?:  Record<string, WeekPrescription | null>;
 }) {
-  const macroPrescription = getWeeklyPrescription(phaseType ?? '', weekInPhase ?? 1);
-
   const exercises = template
     ? [...template.gym_session_exercises].sort((a, b) => a.order_index - b.order_index)
     : [];
@@ -258,7 +254,7 @@ export function GymSessionCard({
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground/60 tabular-nums shrink-0">
-                            {prescription(ex, macroPrescription)}
+                            {prescription(ex, prescriptionsByExerciseId?.[ex.exercises.id] ?? null)}
                           </p>
                         </div>
                         {loggable && (
@@ -306,7 +302,7 @@ export function GymSessionCard({
               <div key={ex.id} className="py-3 first:pt-0 last:pb-0">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">{ex.exercises.name}</p>
-                  <p className="text-sm text-muted-foreground/65 tabular-nums">{prescription(ex, macroPrescription)}</p>
+                  <p className="text-sm text-muted-foreground/65 tabular-nums">{prescription(ex, prescriptionsByExerciseId?.[ex.exercises.id] ?? null)}</p>
                 </div>
                 {sessionRecord && trainingDayId && (
                   <ExerciseLogSection

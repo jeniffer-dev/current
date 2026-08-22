@@ -7,8 +7,9 @@ import { SwimSessionCard } from '@/features/day-view/swim-session-card';
 import { RecoveryCard } from '@/features/day-view/recovery-card';
 import { GenericSessionCard } from '@/features/day-view/generic-session-card';
 import { ConditioningSessionCard } from '@/features/day-view/conditioning-session-card';
-import { buildTestSuggestion, buildLogSuggestion } from '@/lib/suggested-weight';
-import type { WeightSuggestion } from '@/lib/suggested-weight';
+import { buildTestSuggestion, buildLogSuggestion, getWeeklyPrescription } from '@/lib/suggested-weight';
+import type { WeightSuggestion, WeekPrescription } from '@/lib/suggested-weight';
+import { getCompletedExposureCounts, sequenceLength } from '@/lib/progression';
 
 // ── types ─────────────────────────────────────────────────────
 
@@ -269,6 +270,44 @@ export default async function DayViewPage({
     ? getWeekNumber(phase.start_date, trainingDay.date)
     : 1;
 
+  // ── Completion-driven progression (Accumulation main lifts) ──────
+  // Progression clock: which prescribed step comes next, per lift, based on
+  // completed exposures — independent of where the calendar says we are.
+  // Outside Accumulation, getWeeklyPrescription() already returns null for
+  // any input, so behaviour there is unchanged.
+
+  const isAccumulation = phaseType === 'accumulation';
+
+  const accExerciseIds = isAccumulation
+    ? [...new Set(
+        allLoggableExercises
+          .filter(ex => ex.exercises.primary_test_template_id)
+          .map(ex => ex.exercises.id)
+      )]
+    : [];
+
+  let exposureCounts: Map<string, number> | null = null;
+  if (isAccumulation && phase?.id && accExerciseIds.length > 0) {
+    exposureCounts = await getCompletedExposureCounts(
+      accExerciseIds, phase.id, trainingDay.date, supabase
+    );
+  }
+  // exposureCounts stays null when the lookup fails — callers below must
+  // not treat that the same as a genuine zero (never render Step 1 on error).
+  const exposureCountsFailed = isAccumulation && accExerciseIds.length > 0 && exposureCounts === null;
+
+  const stepByExerciseId = new Map<string, number>();
+  if (exposureCounts) {
+    for (const id of accExerciseIds) {
+      stepByExerciseId.set(id, (exposureCounts.get(id) ?? 0) + 1);
+    }
+  }
+
+  const prescriptionsByExerciseId: Record<string, WeekPrescription | null> = {};
+  for (const [exId, step] of stepByExerciseId) {
+    prescriptionsByExerciseId[exId] = getWeeklyPrescription(phaseType, step);
+  }
+
   const suggestionsByExerciseId: Record<string, WeightSuggestion> = {};
 
   for (const ex of allLoggableExercises) {
@@ -278,14 +317,107 @@ export default async function DayViewPage({
     if (testTmplId) {
       const oneRM = latestTestResult.get(testTmplId);
       if (oneRM != null) {
-        const s = buildTestSuggestion(oneRM, phaseType, weekInPhase);
-        if (s) { suggestionsByExerciseId[exId] = s; continue; }
+        if (isAccumulation) {
+          // Correctness-first: on a failed exposure lookup, show no
+          // suggestion at all rather than risk a wrong or stale one.
+          if (exposureCountsFailed) continue;
+
+          const step = stepByExerciseId.get(exId);
+          if (step != null) {
+            const s = buildTestSuggestion(oneRM, phaseType, step);
+            if (s) { suggestionsByExerciseId[exId] = s; continue; }
+          }
+        } else {
+          const s = buildTestSuggestion(oneRM, phaseType, weekInPhase);
+          if (s) { suggestionsByExerciseId[exId] = s; continue; }
+        }
       }
     }
 
     const lastLog = latestLogByExercise.get(exId);
     if (lastLog) {
       suggestionsByExerciseId[exId] = buildLogSuggestion(lastLog.weight, lastLog.reps);
+    }
+  }
+
+  // ── Phase-boundary notice ─────────────────────────────────────────
+  // Stateless and self-clearing: a lift is flagged when it stopped mid-
+  // sequence in the previous phase instance AND has zero completed
+  // exposures so far in the current one. The moment it gets its first
+  // exposure here, it silently drops out — no state is persisted.
+  // CURRENT warns; it does not decide carry-over, reset, or anything else.
+
+  type PhaseBoundaryNotice = {
+    exerciseName:      string;
+    completedInPrevious: number;
+    sequenceLength:    number;
+    previousPhaseName: string;
+  };
+  const phaseBoundaryNotices: PhaseBoundaryNotice[] = [];
+
+  if (phase?.id && phase.start_date && trainingDay.macrocycle_id) {
+    const { data: previousPhase } = await supabase
+      .from('phases')
+      .select('id, name, phase_type, start_date')
+      .eq('macrocycle_id', trainingDay.macrocycle_id)
+      .lt('start_date', phase.start_date)
+      .order('start_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const previousHasSequence = previousPhase
+      ? getWeeklyPrescription(previousPhase.phase_type, 1) !== null
+      : false;
+
+    if (previousPhase && previousHasSequence) {
+      // Lifts in scope for that previous phase type: tested lifts that were
+      // actually prescribed there, derived from data — never a hardcoded
+      // exercise list.
+      type ScopedLiftRow = {
+        exercise_id: string;
+        exercises: { name: string; primary_test_template_id: string | null };
+      };
+
+      const { data: scopedRows } = await supabase
+        .from('gym_session_exercises')
+        .select('exercise_id, exercises!inner(name, primary_test_template_id), gym_session_templates!inner(phase_type)')
+        .eq('intensity_type', 'percentage')
+        .eq('gym_session_templates.phase_type', previousPhase.phase_type)
+        .not('exercises.primary_test_template_id', 'is', null);
+
+      const scopedExerciseNames = new Map<string, string>();
+      for (const row of (scopedRows as ScopedLiftRow[] | null) ?? []) {
+        scopedExerciseNames.set(row.exercise_id, row.exercises.name);
+      }
+      const scopedIds = [...scopedExerciseNames.keys()];
+
+      if (scopedIds.length > 0) {
+        const [previousCounts, currentCounts] = await Promise.all([
+          getCompletedExposureCounts(scopedIds, previousPhase.id, trainingDay.date, supabase),
+          phase.id
+            ? getCompletedExposureCounts(scopedIds, phase.id, trainingDay.date, supabase)
+            : Promise.resolve(null),
+        ]);
+
+        // Fail closed: an unreliable lookup shows no notice rather than a
+        // possibly-wrong one. This is secondary, advisory information.
+        if (previousCounts && currentCounts) {
+          const seqLen = sequenceLength(previousPhase.phase_type);
+          for (const exId of scopedIds) {
+            const completedInPrevious = previousCounts.get(exId) ?? 0;
+            const completedInCurrent  = currentCounts.get(exId) ?? 0;
+            if (completedInPrevious < seqLen && completedInCurrent === 0) {
+              phaseBoundaryNotices.push({
+                exerciseName:        scopedExerciseNames.get(exId)!,
+                completedInPrevious,
+                sequenceLength:      seqLen,
+                previousPhaseName:   previousPhase.name,
+              });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -383,8 +515,7 @@ export default async function DayViewPage({
                     trainingDayId={trainingDayId}
                     exerciseLogs={sessionRecord ? (exerciseLogsBySessionId.get(sessionRecord.id) ?? []) : []}
                     suggestionsByExerciseId={suggestionsByExerciseId}
-                    phaseType={phaseType}
-                    weekInPhase={weekInPhase}
+                    prescriptionsByExerciseId={prescriptionsByExerciseId}
                   />
                 );
               }
@@ -518,6 +649,24 @@ export default async function DayViewPage({
                   </>
                 );
               })()}
+
+              {phaseBoundaryNotices.length > 0 && (
+                <>
+                  <div className="border-t border-border/35 my-4" />
+                  <div>
+                    <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted-foreground/40 mb-3">
+                      Progression
+                    </p>
+                    <div className="space-y-2">
+                      {phaseBoundaryNotices.map((n) => (
+                        <p key={n.exerciseName} className="text-xs text-muted-foreground/60 leading-relaxed">
+                          {n.exerciseName} stopped at {n.completedInPrevious} of {n.sequenceLength} in {n.previousPhaseName}.
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
             </div>
           </div>

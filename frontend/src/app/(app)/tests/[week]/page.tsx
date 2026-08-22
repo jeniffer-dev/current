@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { Card, CardContent } from '@/components/ui/card';
 import { SESSIONS_BY_WEEK } from '@/features/tests/sessions-config';
 
@@ -89,7 +91,8 @@ export default async function TestBlockPage(
   if (isNaN(weekNumber)) notFound();
 
   const supabase = await createClient();
-  const today    = new Date().toISOString().split('T')[0];
+  const cookieStore = await cookies();
+  const today    = todayInTimezone(cookieStore.get('tz')?.value);
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();

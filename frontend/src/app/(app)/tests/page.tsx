@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { todayInTimezone } from '@/lib/today';
 import { NextTestingBlock } from '@/features/tests/next-testing-block';
 import { TestingTimeline } from '@/features/tests/testing-timeline';
 import { TestingHistory } from '@/features/tests/recent-results';
@@ -35,7 +37,8 @@ type BlockStatus = 'next' | 'future' | 'completed';
 
 export default async function TestsPage() {
   const supabase = await createClient();
-  const today    = new Date().toISOString().split('T')[0];
+  const cookieStore = await cookies();
+  const today    = todayInTimezone(cookieStore.get('tz')?.value);
 
   // ── macrocycle + current phase ────────────────────────────────
 
