@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { firstIssueMessage, planSessionSchema, unscheduleSessionSchema } from '@/lib/validation';
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -48,6 +49,11 @@ export async function planSession({
   templateId:   string | null;
   weekDates:    string[];
 }): Promise<void> {
+  const parsed = planSessionSchema.safeParse({
+    sessionName, date, macrocycleId, phaseId, sessionType, templateId, weekDates,
+  });
+  if (!parsed.success) throw new Error(firstIssueMessage(parsed));
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -155,6 +161,9 @@ export async function unscheduleSession({
   sessionId:     string;
   trainingDayId: string;
 }): Promise<void> {
+  const parsed = unscheduleSessionSchema.safeParse({ sessionId, trainingDayId });
+  if (!parsed.success) throw new Error(firstIssueMessage(parsed));
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
