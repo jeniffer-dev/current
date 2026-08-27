@@ -17,7 +17,7 @@ import { PhasesStep } from './phases-step';
 
 const STEPS = ['Goal', 'Phases'] as const;
 
-export function MacrocycleBuilder({ today }: { today: string }) {
+export function MacrocycleBuilder({ today, currentPlanName }: { today: string; currentPlanName: string | null }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(builderReducer, today, initialBuilderState);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export function MacrocycleBuilder({ today }: { today: string }) {
 
       <div className="pt-8">
         {state.step === 0
-          ? <GoalStep state={state} dispatch={dispatch} />
+          ? <GoalStep state={state} dispatch={dispatch} currentPlanName={currentPlanName} />
           : <PhasesStep state={state} dispatch={dispatch} />}
       </div>
 

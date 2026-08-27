@@ -7,6 +7,7 @@ import { activeMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
+import { PastPlans, type PastPlan } from '@/features/macrocycle/past-plans';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
@@ -53,6 +54,17 @@ export default async function MacrocyclePage() {
     phases = (data ?? []) as Phase[];
   }
 
+  // Archived plans. Creating a new macrocycle steps the previous one down,
+  // and every page reads the active one — so they need a way back here, or
+  // archiving is a one-way door.
+  const { data: pastPlansRaw } = await supabase
+    .from('macrocycles')
+    .select('id, name, start_date, end_date')
+    .eq('is_active', false)
+    .order('start_date', { ascending: false });
+
+  const pastPlans = (pastPlansRaw ?? []) as PastPlan[];
+
   return (
     <div className="w-full max-w-[1120px] mx-auto px-5 pt-6 pb-8 sm:px-8 sm:pt-7 md:px-10 md:pt-8 space-y-4">
 
@@ -94,6 +106,8 @@ export default async function MacrocyclePage() {
           </Button>
         </div>
       )}
+
+      <PastPlans plans={pastPlans} />
     </div>
   );
 }

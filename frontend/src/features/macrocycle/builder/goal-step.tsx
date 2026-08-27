@@ -16,9 +16,11 @@ const hierarchy = [
 export function GoalStep({
   state,
   dispatch,
+  currentPlanName,
 }: {
   state:    BuilderState;
   dispatch: (action: BuilderAction) => void;
+  currentPlanName: string | null;
 }) {
   const set = (field: 'name' | 'goalEvent' | 'startDate' | 'targetDate') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -34,6 +36,13 @@ export function GoalStep({
           A macrocycle is your full season. It&apos;s built from phases, phases are built from
           weeks, and weeks are built from sessions.
         </p>
+        {currentPlanName && (
+          <p className="max-w-[540px] text-sm leading-relaxed text-muted-foreground">
+            Creating this will make <span className="font-medium text-foreground">{currentPlanName}</span>{' '}
+            a past plan. Nothing is deleted — you can make it current again from the
+            macrocycle page.
+          </p>
+        )}
       </div>
 
       <Card>
