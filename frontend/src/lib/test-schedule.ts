@@ -9,6 +9,17 @@ import { addDays, parseDate, toDateString } from '@/lib/phase-plan';
 
 export type BatteryKind = 'in_water' | 'strength' | 'mixed';
 
+/**
+ * testing_sessions.session_type is free text in the database, and the
+ * testing components key a lookup table on it — an unrecognised value
+ * would read as undefined and take the render down with it. Anything
+ * unexpected is treated as 'mixed', which is the value that promises
+ * least about what the session contains.
+ */
+export function asBatteryKind(value: string): BatteryKind {
+  return value === 'in_water' || value === 'strength' ? value : 'mixed';
+}
+
 export type Anchor =
   | { kind: 'phase'; phaseId: string; position: 'start' | 'end' }
   | { kind: 'date';  date: string };

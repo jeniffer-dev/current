@@ -7,17 +7,10 @@ import { NextTestingBlock } from '@/features/tests/next-testing-block';
 import { TestingTimeline } from '@/features/tests/testing-timeline';
 import { TestingHistory } from '@/features/tests/recent-results';
 import type { TestingHistoryBlock, BlockResult } from '@/features/tests/recent-results';
-import { SESSIONS_BY_WEEK } from '@/features/tests/sessions-config';
+import { prescriptionsForSessions, testNames } from '@/features/tests/session-prescriptions';
+import { asBatteryKind, type BatteryKind } from '@/lib/test-schedule';
 
-// Per-block session view derived from the same source of truth the week
-// detail page uses (SESSIONS_BY_WEEK). Weeks without config return [].
-function getSessions(weekNumber: number) {
-  return (SESSIONS_BY_WEEK[weekNumber] ?? []).map(s => ({
-    date:         s.date,
-    session_type: s.session_type,
-    templates:    [...s.templates],
-  }));
-}
+type BlockSession = { date: string; session_type: BatteryKind; templates: string[] };
 
 export const metadata: Metadata = { title: 'Tests · CURRENT' };
 
@@ -77,6 +70,35 @@ export default async function TestsPage() {
       .order('week_number', { ascending: true });
 
     allDbBlocks = dbBlocksRaw ?? [];
+  }
+
+  // ── the sessions in each block, and what they prescribe ───────
+
+  const sessionsByWeek = new Map<number, BlockSession[]>();
+
+  if (allDbBlocks.length > 0) {
+    const { data: sessionRows } = await supabase
+      .from('testing_sessions')
+      .select('id, testing_block_id, session_type, date')
+      .in('testing_block_id', allDbBlocks.map(b => b.id))
+      .order('date', { ascending: true });
+
+    const prescriptions = await prescriptionsForSessions(
+      supabase, (sessionRows ?? []).map(s => s.id));
+
+    const weekByBlockId = new Map(allDbBlocks.map(b => [b.id, b.week_number]));
+
+    for (const row of sessionRows ?? []) {
+      const week = weekByBlockId.get(row.testing_block_id);
+      if (week === undefined) continue;
+      const list = sessionsByWeek.get(week) ?? [];
+      list.push({
+        date:         row.date,
+        session_type: asBatteryKind(row.session_type),
+        templates:    testNames(prescriptions.get(row.id)),
+      });
+      sessionsByWeek.set(week, list);
+    }
   }
 
   // ── derive display status for each block ──────────────────────
@@ -205,7 +227,7 @@ export default async function TestsPage() {
             scheduled_date: nextBlock.scheduled_date,
             status:         nextBlock.status,
             purpose:        nextBlock.purpose,
-            sessions:       getSessions(nextBlock.week_number),
+            sessions:       sessionsByWeek.get(nextBlock.week_number) ?? [],
           }}
         />
       )}
@@ -218,7 +240,7 @@ export default async function TestsPage() {
           status:         b.status,
           purpose:        b.purpose,
           scheduled_date: b.scheduled_date,
-          sessions:       getSessions(b.week_number),
+          sessions:       sessionsByWeek.get(b.week_number) ?? [],
         }))}
       />
 

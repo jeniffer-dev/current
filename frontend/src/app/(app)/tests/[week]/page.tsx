@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { scopedMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { Card, CardContent } from '@/components/ui/card';
-import { SESSIONS_BY_WEEK } from '@/features/tests/sessions-config';
+import { prescriptionsForSessions, testNames } from '@/features/tests/session-prescriptions';
 
 
 // ── badge styles ──────────────────────────────────────────────
@@ -132,25 +132,8 @@ export default async function TestBlockPage(
 
   if (!blockRow) notFound();
 
-  // ── upsert planned sessions from config ───────────────────
-
-  const weekConfig = SESSIONS_BY_WEEK[weekNumber] ?? null;
-
-  if (weekConfig) {
-    await supabase
-      .from('testing_sessions')
-      .upsert(
-        weekConfig.map(s => ({
-          user_id:          user.id,
-          testing_block_id: blockRow.id,
-          date:             s.date,
-          session_type:     s.session_type,
-          session_label:    s.label,
-          status:           'planned',
-        })),
-        { onConflict: 'testing_block_id,session_label', ignoreDuplicates: true }
-      );
-  }
+  // Sessions are no longer conjured from a hardcoded literal on every
+  // page view — they are created when the plan is, and read here.
 
   // ── fetch sessions ────────────────────────────────────────
 
@@ -159,6 +142,11 @@ export default async function TestBlockPage(
     .select('id, session_label, session_type, date, status')
     .eq('testing_block_id', blockRow.id)
     .order('date', { ascending: true });
+
+  // ── what each session prescribes ──────────────────────────
+
+  const prescriptions = await prescriptionsForSessions(
+    supabase, (sessionsRaw ?? []).map(s => s.id));
 
   // ── fetch results for completion tracking ─────────────────
 
@@ -181,13 +169,12 @@ export default async function TestBlockPage(
   const allCompletedTemplates = new Set(
     (resultsRaw ?? []).map(r => r.test_template_id)
   );
-  const totalTests     = weekConfig?.reduce((sum, s) => sum + s.templates.length, 0) ?? 0;
+  const totalTests     = [...prescriptions.values()].reduce((sum, t) => sum + t.length, 0);
   const completedTests = allCompletedTemplates.size;
 
   // ── build session cards ───────────────────────────────────
 
   const sessionCards = (sessionsRaw ?? []).map(s => {
-    const config       = weekConfig?.find(c => c.label === s.session_label);
     const completedSet = completionBySession.get(s.id) ?? new Set<string>();
     const displayStatus =
       s.status === 'completed'  ? 'completed'  :
@@ -200,7 +187,7 @@ export default async function TestBlockPage(
       session_type:   s.session_type,
       date:           s.date,
       status:         displayStatus,
-      templates:      config?.templates ?? [],
+      templates:      testNames(prescriptions.get(s.id)),
       completedCount: completedSet.size,
     };
   });
@@ -260,7 +247,7 @@ export default async function TestBlockPage(
       </p>
 
       {/* Session cards */}
-      {weekConfig ? (
+      {sessionCards.length > 0 ? (
         <div className="space-y-3">
           {sessionCards.map(session => (
             <Card key={session.id}>
@@ -311,7 +298,7 @@ export default async function TestBlockPage(
         </div>
       ) : (
         <p className="text-sm text-muted-foreground/50">
-          Sessions are not yet configured for this testing block.
+          Nothing is scheduled in this testing block yet.
         </p>
       )}
 
