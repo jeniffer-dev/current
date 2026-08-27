@@ -58,6 +58,24 @@ export const sessionStatusSchema = z.object({
   trainingDayId: uuid,
 });
 
+export const createMacrocycleSchema = z.object({
+  name:       z.string().trim().min(1, 'Give your plan a name.').max(120),
+  goalEvent:  z.string().trim().max(160).nullable(),
+  startDate:  isoDate,
+  targetDate: isoDate,
+  phases: z.array(z.object({
+    type:        z.enum(['adaptation', 'accumulation', 'transmutation', 'realization', 'competition', 'reset', 'custom']),
+    name:        z.string().trim().min(1, 'Every phase needs a name.').max(120),
+    description: z.string().trim().max(2000).nullable(),
+    weeks:       z.number().int().min(1).max(52),
+  })).min(1, 'A macrocycle needs at least one phase.').max(40),
+}).refine(
+  v => v.targetDate > v.startDate,
+  { message: 'The event has to come after the start date.', path: ['targetDate'] },
+);
+
+export type CreateMacrocycleInput = z.infer<typeof createMacrocycleSchema>;
+
 /** Formats the first Zod issue as a single user-facing message. */
 export function firstIssueMessage(result: z.SafeParseError<unknown>): string {
   return result.error.issues[0]?.message ?? 'Invalid input.';

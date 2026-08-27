@@ -1,14 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
+import { phaseTint } from '@/lib/phase-catalog';
 import type { Phase } from '@/app/(app)/macrocycle/page';
-
-const phaseTints: Record<string, string> = {
-  adaptation:    'bg-teal-50 text-teal-700',
-  accumulation:  'bg-orange-50 text-orange-700',
-  transmutation: 'bg-amber-50 text-amber-700',
-  realization:   'bg-yellow-50 text-yellow-700',
-  competition:   'bg-emerald-50 text-emerald-700',
-  reset:         'bg-slate-50 text-slate-500',
-};
 
 type PhaseStatus = 'upcoming' | 'active' | 'completed';
 
@@ -56,7 +48,7 @@ const statusLabel: Record<PhaseStatus, string> = {
 export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
   const status = getStatus(phase.start_date, phase.end_date, today);
   const progress = getProgress(phase.start_date, phase.end_date, today);
-  const tint = phaseTints[phase.phase_type] ?? phaseTints.reset;
+  const tint = phaseTint(phase.phase_type);
   const weeks = getWeeks(phase.start_date, phase.end_date);
 
   return (

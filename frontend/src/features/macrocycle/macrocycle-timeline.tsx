@@ -1,14 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
+import { phaseColor } from '@/lib/phase-catalog';
 import type { Macrocycle, Phase } from '@/app/(app)/macrocycle/page';
-
-const phaseColors: Record<string, string> = {
-  adaptation:    'var(--current-soft)',
-  accumulation:  'var(--current-load)',
-  transmutation: 'var(--current-peak)',
-  realization:   'var(--current-recovery)',
-  competition:   'var(--current-primary)',
-  reset:         '#e5e7eb',
-};
 
 function daysBetween(from: string, to: string): number {
   const a = new Date(from + 'T00:00:00').getTime();
@@ -53,7 +45,7 @@ export function MacrocycleTimeline({
                   key={phase.id}
                   style={{
                     width: `${pct}%`,
-                    backgroundColor: phaseColors[phase.phase_type] ?? '#e5e7eb',
+                    backgroundColor: phaseColor(phase.phase_type),
                   }}
                 />
               );
