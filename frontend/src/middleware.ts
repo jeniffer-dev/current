@@ -29,10 +29,17 @@ const supabaseOrigin = (() => {
 // nonce, not via 'self'. Set on both the outgoing request headers (so
 // Next's renderer picks the nonce up for its own inline scripts) and the
 // response headers (so the browser enforces it).
+// `next dev` compiles client chunks with eval-based source maps, so a
+// script-src without 'unsafe-eval' blocks every one of them: React never
+// hydrates, and the app renders as dead HTML — inputs still accept typing
+// because that is native browser behaviour, but no button does anything.
+// The production bundle uses no eval, so this relaxation never ships.
+const DEV_SCRIPT_SRC = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : '';
+
 function buildCsp(nonce: string) {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    `script-src 'self' 'nonce-${nonce}'${DEV_SCRIPT_SRC}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
@@ -76,7 +83,13 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isPublic    = PUBLIC.some(r => pathname === r || pathname.startsWith(r + '/'));
+  // Static files served from public/ — the matcher below excludes images,
+  // but not other extensions. Without this, /tz.js redirects to /login and
+  // the browser receives HTML where it expects JavaScript. App routes have
+  // no file extension, so this cannot expose one.
+  const isStaticAsset = pathname.includes('.');
+
+  const isPublic    = isStaticAsset || PUBLIC.some(r => pathname === r || pathname.startsWith(r + '/'));
   const isProtected = !isPublic;
   const isAuthRoute = AUTH_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'));
 
