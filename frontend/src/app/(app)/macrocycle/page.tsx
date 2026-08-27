@@ -8,6 +8,7 @@ import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
 import { PlanList } from '@/features/macrocycle/plan-list';
+import type { PhasePrescription } from '@/features/macrocycle/phase-session-mix';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
@@ -47,6 +48,10 @@ export default async function MacrocyclePage() {
   const macrocycle = plans.scope;
 
   let phases: Phase[] = [];
+  // The typical week of each phase, and how many weeks depart from it.
+  const mixByPhase   = new Map<string, PhasePrescription[]>();
+  const editedWeeks  = new Map<string, number>();
+
   if (macrocycle) {
     const { data } = await supabase
       .from('phases')
@@ -54,6 +59,36 @@ export default async function MacrocyclePage() {
       .eq('macrocycle_id', macrocycle.id)
       .order('start_date', { ascending: true });
     phases = (data ?? []) as Phase[];
+
+    const phaseIds = phases.map(p => p.id);
+    if (phaseIds.length > 0) {
+      const [{ data: mix }, { data: weeks }] = await Promise.all([
+        supabase
+          .from('phase_session_prescriptions')
+          .select('phase_id, activity_key, label, sessions_per_week')
+          .in('phase_id', phaseIds),
+        supabase
+          .from('phase_week_prescriptions')
+          .select('phase_id, week_index')
+          .in('phase_id', phaseIds),
+      ]);
+
+      for (const row of mix ?? []) {
+        const list = mixByPhase.get(row.phase_id) ?? [];
+        list.push(row);
+        mixByPhase.set(row.phase_id, list);
+      }
+
+      // A week is one departure however many activities it changes, so
+      // the weeks are counted distinctly rather than the rows.
+      const seen = new Map<string, Set<number>>();
+      for (const row of weeks ?? []) {
+        const set = seen.get(row.phase_id) ?? new Set<number>();
+        set.add(row.week_index);
+        seen.set(row.phase_id, set);
+      }
+      for (const [phaseId, set] of seen) editedWeeks.set(phaseId, set.size);
+    }
   }
 
   // Other cycles, split by where today falls. Nothing is archived by hand:
@@ -85,7 +120,13 @@ export default async function MacrocyclePage() {
       {phases.length > 0 ? (
         <div className="space-y-3">
           {phases.map(phase => (
-            <PhaseRow key={phase.id} phase={phase} today={today} />
+            <PhaseRow
+              key={phase.id}
+              phase={phase}
+              today={today}
+              prescriptions={mixByPhase.get(phase.id) ?? []}
+              editedWeeks={editedWeeks.get(phase.id) ?? 0}
+            />
           ))}
         </div>
       ) : (

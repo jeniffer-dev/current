@@ -1,5 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { phaseTint } from '@/lib/phase-catalog';
+import { PhaseSessionMix, type PhasePrescription } from './phase-session-mix';
 import type { Phase } from '@/app/(app)/macrocycle/page';
 
 type PhaseStatus = 'upcoming' | 'active' | 'completed';
@@ -45,7 +46,17 @@ const statusLabel: Record<PhaseStatus, string> = {
   completed: 'Completed',
 };
 
-export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
+export function PhaseRow({
+  phase,
+  today,
+  prescriptions = [],
+  editedWeeks = 0,
+}: {
+  phase:          Phase;
+  today:          string;
+  prescriptions?: PhasePrescription[];
+  editedWeeks?:   number;
+}) {
   const status = getStatus(phase.start_date, phase.end_date, today);
   const progress = getProgress(phase.start_date, phase.end_date, today);
   const tint = phaseTint(phase.phase_type);
@@ -95,6 +106,8 @@ export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
             />
           </div>
         )}
+
+        <PhaseSessionMix prescriptions={prescriptions} editedWeeks={editedWeeks} />
 
         {(phase.volume || phase.intensity) && (
           <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border/50">

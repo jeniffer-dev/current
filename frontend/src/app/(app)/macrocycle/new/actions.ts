@@ -43,8 +43,20 @@ export async function createMacrocycle(
 
   const scheduled = schedulePhases(plan.startDate, plan.phases);
 
-  const { error: phasesError } = await supabase.from('phases').insert(
-    scheduled.map(phase => ({
+  // No transaction is available through the Supabase client, so anything
+  // that fails after this point takes the macrocycle down with it. A cycle
+  // with no phases is worse than none at all: it covers a date range, so it
+  // becomes "current" the moment today falls inside it, and every page
+  // renders empty. Deleting the macrocycle cascades to phases and to their
+  // prescriptions, so one delete undoes all of it.
+  const rollback = async (message: string): Promise<CreateMacrocycleState> => {
+    await supabase.from('macrocycles').delete().eq('id', created.id).eq('user_id', user.id);
+    return { error: message };
+  };
+
+  const { data: insertedPhases, error: phasesError } = await supabase
+    .from('phases')
+    .insert(scheduled.map(phase => ({
       user_id:       user.id,
       macrocycle_id: created.id,
       name:          phase.name,
@@ -52,17 +64,66 @@ export async function createMacrocycle(
       start_date:    phase.startDate,
       end_date:      phase.endDate,
       notes:         phase.description,
-    })),
-  );
+    })))
+    .select('id, start_date');
 
-  // No transaction is available through the Supabase client, so the
-  // macrocycle is removed by hand if its phases fail to land. A cycle with
-  // no phases is worse than none at all: it covers a date range, so it
-  // becomes "current" the moment today falls inside it, and every page
-  // renders empty.
-  if (phasesError) {
-    await supabase.from('macrocycles').delete().eq('id', created.id).eq('user_id', user.id);
-    return { error: phasesError.message };
+  if (phasesError || !insertedPhases) {
+    return rollback(phasesError?.message ?? 'Could not create the phases.');
+  }
+
+  // Matched on start_date rather than on the order rows came back in:
+  // phases run back to back and every phase is at least a week long, so
+  // within one macrocycle the start date identifies the phase.
+  const phaseIdByStart = new Map(insertedPhases.map(p => [p.start_date, p.id]));
+
+  const prescriptions: {
+    user_id: string; phase_id: string; activity_key: string;
+    label: string | null; sessions_per_week: number;
+  }[] = [];
+
+  const weekPrescriptions: {
+    user_id: string; phase_id: string; week_index: number;
+    activity_key: string; sessions_count: number;
+  }[] = [];
+
+  for (const [i, phase] of plan.phases.entries()) {
+    const phaseId = phaseIdByStart.get(scheduled[i].startDate);
+    if (!phaseId) return rollback('Could not match the phases that were created.');
+
+    for (const session of phase.sessions) {
+      prescriptions.push({
+        user_id:           user.id,
+        phase_id:          phaseId,
+        activity_key:      session.key,
+        label:             session.label,
+        sessions_per_week: session.sessionsPerWeek,
+      });
+    }
+
+    for (const override of phase.weekOverrides) {
+      // A week past the end of the phase has no week to describe. The
+      // builder prunes these, but the action is the boundary that decides.
+      if (override.weekIndex >= phase.weeks) continue;
+      for (const count of override.counts) {
+        weekPrescriptions.push({
+          user_id:        user.id,
+          phase_id:       phaseId,
+          week_index:     override.weekIndex,
+          activity_key:   count.key,
+          sessions_count: count.sessionsCount,
+        });
+      }
+    }
+  }
+
+  if (prescriptions.length > 0) {
+    const { error } = await supabase.from('phase_session_prescriptions').insert(prescriptions);
+    if (error) return rollback(error.message);
+  }
+
+  if (weekPrescriptions.length > 0) {
+    const { error } = await supabase.from('phase_week_prescriptions').insert(weekPrescriptions);
+    if (error) return rollback(error.message);
   }
 
   revalidatePath('/macrocycle');
