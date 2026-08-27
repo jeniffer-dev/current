@@ -1,7 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PROTECTED = ['/dashboard', '/planner', '/performance', '/libraries', '/macrocycle', '/profile'];
+// Everything requires a session except the routes named here.
+//
+// This used to be the other way round — a hand-maintained list of
+// protected paths — and it drifted: /tests was never added, so the whole
+// testing section rendered for anonymous visitors. Row-level security
+// meant no data leaked, but the page should not have been reachable at
+// all. An allowlist fails safe: a route added tomorrow is protected
+// unless someone deliberately opens it.
+const PUBLIC = ['/login', '/signup', '/terms', '/privacy', '/auth'];
 const AUTH_ROUTES = ['/login', '/signup'];
 
 // Supabase project origin, derived from the same env var the app already
@@ -68,7 +76,8 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isProtected = PROTECTED.some(r => pathname === r || pathname.startsWith(r + '/'));
+  const isPublic    = PUBLIC.some(r => pathname === r || pathname.startsWith(r + '/'));
+  const isProtected = !isPublic;
   const isAuthRoute = AUTH_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'));
 
   if (!user && isProtected) {
