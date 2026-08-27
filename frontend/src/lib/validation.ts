@@ -89,6 +89,24 @@ export const createMacrocycleSchema = z.object({
       })).max(activityKeys.length),
     })).max(52),
   })).min(1, 'A macrocycle needs at least one phase.').max(40),
+  // Testing is optional: a plan with no batteries is a valid plan.
+  batteries: z.array(z.object({
+    name:        z.string().trim().min(1).max(120),
+    kind:        z.enum(['in_water', 'strength', 'mixed']),
+    templateIds: z.array(uuid).min(1).max(40),
+    anchors: z.array(z.object({
+      kind:       z.enum(['phase', 'date']),
+      // Index into the submitted phases, since they have no ids yet.
+      phaseIndex: z.number().int().min(0).max(39).nullable(),
+      position:   z.enum(['start', 'end']).nullable(),
+      date:       isoDate.nullable(),
+    }).refine(
+      a => a.kind === 'phase'
+        ? a.phaseIndex !== null && a.position !== null && a.date === null
+        : a.date !== null && a.phaseIndex === null && a.position === null,
+      { message: 'A testing date is either anchored to a phase or set by hand, not both.' },
+    )).min(1).max(60),
+  })).max(20),
 }).refine(
   v => v.targetDate > v.startDate,
   { message: 'The event has to come after the start date.', path: ['targetDate'] },
