@@ -32,7 +32,8 @@ export default async function DashboardPage() {
     activeMacrocycle<{
       id: string; name: string; goal_event: string | null;
       start_date: string; end_date: string;
-    }>(supabase, 'id, name, goal_event, start_date, end_date'),
+      goal_event_date: string | null;
+    }>(supabase, 'id, name, goal_event, goal_event_date, start_date, end_date'),
     supabase
       .from('training_days')
       .select('id, date, session_type, status, readiness_score, notes')

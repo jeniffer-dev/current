@@ -65,12 +65,13 @@ export function GoalStep({
               onChange={set('name')}
               placeholder="e.g. Rugby Season 2026"
               autoComplete="off"
+              required
             />
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="mc-goal" className="text-sm font-medium">
-              Goal / target event <span className="font-normal text-muted-foreground">(optional)</span>
+              Event name <span className="font-normal text-muted-foreground">(optional)</span>
             </label>
             <Input
               id="mc-goal"
@@ -84,11 +85,23 @@ export function GoalStep({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="mc-start" className="text-sm font-medium">Start date</label>
-              <Input id="mc-start" type="date" value={state.startDate} onChange={set('startDate')} />
+              <Input id="mc-start" type="date" value={state.startDate} onChange={set('startDate')} required />
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="mc-target" className="text-sm font-medium">Target event date</label>
-              <Input id="mc-target" type="date" value={state.targetDate} onChange={set('targetDate')} />
+              <label htmlFor="mc-target" className="text-sm font-medium">
+                Target event date
+              </label>
+              <Input
+                id="mc-target"
+                type="date"
+                value={state.targetDate}
+                onChange={set('targetDate')}
+                required
+                aria-describedby="mc-target-hint"
+              />
+              <p id="mc-target-hint" className="text-xs text-muted-foreground">
+                Everything in the plan is measured against this day.
+              </p>
             </div>
           </div>
 

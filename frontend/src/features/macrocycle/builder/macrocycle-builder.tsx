@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { createMacrocycle } from '@/app/(app)/macrocycle/new/actions';
 import {
   builderReducer,
-  canContinueFromGoal,
+  goalStepBlocker,
   includedPhases,
   initialBuilderState,
   phaseName,
@@ -23,11 +23,36 @@ export function MacrocycleBuilder({ today }: { today: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const phases      = includedPhases(state);
-  const canContinue = canContinueFromGoal(state);
-  const canCreate   = canContinue && phases.length > 0;
+  const phases  = includedPhases(state);
+  const blocker = goalStepBlocker(state);
+
+  // The forward button is never disabled. A greyed-out button cannot say
+  // what it wants, so pressing it is the fastest way to find out: it
+  // states the problem and moves the cursor to the field that has it.
+  function goToPhases() {
+    if (blocker) {
+      setError(blocker.message);
+      const field = document.getElementById(blocker.fieldId);
+      // Scroll as well as focus: the field is usually above the fold from
+      // where the button sits, and a cursor you cannot see is no guidance.
+      field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field?.focus({ preventScroll: true });
+      return;
+    }
+    setError(null);
+    dispatch({ type: 'step', step: 1 });
+  }
 
   function submit() {
+    if (blocker) {
+      setError(blocker.message);
+      dispatch({ type: 'step', step: 0 });
+      return;
+    }
+    if (phases.length === 0) {
+      setError('Keep at least one phase to create the plan.');
+      return;
+    }
     setError(null);
     startTransition(async () => {
       const result = await createMacrocycle({
@@ -63,8 +88,7 @@ export function MacrocycleBuilder({ today }: { today: string }) {
             <button
               key={label}
               type="button"
-              onClick={() => dispatch({ type: 'step', step: i as 0 | 1 })}
-              disabled={i > state.step && !canContinue}
+              onClick={() => (i === 0 ? dispatch({ type: 'step', step: 0 }) : goToPhases())}
               aria-current={i === state.step ? 'step' : undefined}
               className="flex flex-col items-center gap-1.5 px-1 py-1 disabled:opacity-40"
             >
@@ -95,32 +119,36 @@ export function MacrocycleBuilder({ today }: { today: string }) {
           : <PhasesStep state={state} dispatch={dispatch} />}
       </div>
 
-      {error && (
-        <p role="alert" className="pt-6 text-sm text-destructive">{error}</p>
-      )}
-
-      <div className="sticky bottom-0 mt-8 flex items-center justify-between bg-gradient-to-t from-background from-60% to-transparent pb-6 pt-7">
-        {state.step > 0 ? (
-          <Button type="button" variant="ghost" onClick={() => dispatch({ type: 'step', step: 0 })}>
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back
-          </Button>
-        ) : <div />}
-
-        {state.step === STEPS.length - 1 ? (
-          <Button type="button" size="lg" disabled={!canCreate || isPending} onClick={submit}>
-            {isPending ? 'Creating…' : 'Create plan'}
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            disabled={!canContinue}
-            onClick={() => dispatch({ type: 'step', step: 1 })}
-          >
-            Continue
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
+      {/* The message lives inside the sticky bar, not in document flow: the
+          button is pinned to the bottom of the viewport, so an explanation
+          rendered after the page content can sit below the fold — pressing
+          the button then looks like it does nothing at all. */}
+      <div className="sticky bottom-0 mt-8 bg-gradient-to-t from-background from-60% to-transparent pb-6 pt-7">
+        {error && (
+          <p role="alert" className="pb-3 text-right text-sm font-medium text-destructive">
+            {error}
+          </p>
         )}
+
+        <div className="flex items-center justify-between gap-4">
+          {state.step > 0 ? (
+            <Button type="button" variant="ghost" onClick={() => dispatch({ type: 'step', step: 0 })}>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back
+            </Button>
+          ) : <div />}
+
+          {state.step === STEPS.length - 1 ? (
+            <Button type="button" size="lg" disabled={isPending} onClick={submit}>
+              {isPending ? 'Creating…' : 'Create plan'}
+            </Button>
+          ) : (
+            <Button type="button" onClick={goToPhases}>
+              Continue
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

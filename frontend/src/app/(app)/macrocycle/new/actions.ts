@@ -56,12 +56,13 @@ export async function createMacrocycle(
   const { data: created, error: insertError } = await supabase
     .from('macrocycles')
     .insert({
-      user_id:    user.id,
-      name:       plan.name,
-      goal_event: plan.goalEvent,
-      start_date: plan.startDate,
-      end_date:   endDate,
-      is_active:  true,
+      user_id:         user.id,
+      name:            plan.name,
+      goal_event:      plan.goalEvent,
+      goal_event_date: plan.targetDate,
+      start_date:      plan.startDate,
+      end_date:        endDate,
+      is_active:       true,
     })
     .select('id')
     .single();

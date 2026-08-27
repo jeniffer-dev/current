@@ -133,11 +133,31 @@ export function phaseNote(phase: BuilderPhase): string {
   return suggestedPhases.find(p => p.type === phase.type)?.note ?? '';
 }
 
+/**
+ * What's still missing before the Goal step can be left, and which field
+ * to send the athlete to. Carrying the field id matters as much as the
+ * message: the form has two name fields side by side, and being told
+ * "give your plan a name" while looking at a filled-in Event name is how
+ * someone concludes the app is broken.
+ */
+export type GoalBlocker = { message: string; fieldId: string };
+
+export function goalStepBlocker(state: BuilderState): GoalBlocker | null {
+  if (!state.name.trim()) {
+    return { message: 'Your plan needs a name — the first field.', fieldId: 'mc-name' };
+  }
+  if (!state.startDate) {
+    return { message: 'Pick a start date.', fieldId: 'mc-start' };
+  }
+  if (!state.targetDate) {
+    return { message: 'Pick the date of your target event.', fieldId: 'mc-target' };
+  }
+  if (state.targetDate <= state.startDate) {
+    return { message: 'The event has to come after the start date.', fieldId: 'mc-target' };
+  }
+  return null;
+}
+
 export function canContinueFromGoal(state: BuilderState): boolean {
-  return Boolean(
-    state.name.trim() &&
-    state.startDate &&
-    state.targetDate &&
-    state.targetDate > state.startDate,
-  );
+  return goalStepBlocker(state) === null;
 }

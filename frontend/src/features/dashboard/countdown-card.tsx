@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 type Macrocycle = {
   end_date: string;
   goal_event: string | null;
+  goal_event_date?: string | null;
 };
 
 function getDaysRemaining(endDate: string, today: string): number {
@@ -28,7 +29,9 @@ export function CountdownCard({
     );
   }
 
-  const days = getDaysRemaining(macrocycle.end_date, today);
+  // Count down to the competition when the athlete named a date. Older
+  // macrocycles have none, and fall back to where the phases run out.
+  const days = getDaysRemaining(macrocycle.goal_event_date ?? macrocycle.end_date, today);
 
   return (
     <Card>
