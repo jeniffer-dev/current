@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { activeMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { Card, CardContent } from '@/components/ui/card';
 import { SESSIONS_BY_WEEK } from '@/features/tests/sessions-config';
@@ -61,12 +62,8 @@ export async function generateMetadata(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { title: 'Tests · CURRENT' };
 
-  const { data: macrocyclesRaw } = await supabase
-    .from('macrocycles')
-    .select('id')
-    .order('start_date', { ascending: false })
-    .limit(1);
-  const macrocycleId = macrocyclesRaw?.[0]?.id ?? null;
+  const active = await activeMacrocycle<{ id: string }>(supabase, 'id');
+  const macrocycleId = active?.id ?? null;
   if (!macrocycleId) return { title: 'Tests · CURRENT' };
 
   const { data: block } = await supabase
@@ -99,13 +96,10 @@ export default async function TestBlockPage(
 
   // ── macrocycle + current phase ────────────────────────────
 
-  const { data: macrocyclesRaw } = await supabase
-    .from('macrocycles')
-    .select('id, name, goal_event, start_date, end_date')
-    .order('start_date', { ascending: false })
-    .limit(1);
-
-  const macrocycle = macrocyclesRaw?.[0] ?? null;
+  const macrocycle = await activeMacrocycle<{
+    id: string; name: string; goal_event: string | null;
+    start_date: string; end_date: string;
+  }>(supabase, 'id, name, goal_event, start_date, end_date');
   if (!macrocycle) notFound();
 
   const { data: phasesData } = await supabase

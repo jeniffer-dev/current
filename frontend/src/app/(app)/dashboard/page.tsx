@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { activeMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { MacrocycleCard } from '@/features/dashboard/macrocycle-card';
 import { PhaseCard } from '@/features/dashboard/phase-card';
@@ -12,12 +13,7 @@ import type { LatestNote } from '@/features/dashboard/latest-reflection-card';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('macrocycles')
-    .select('name')
-    .order('start_date', { ascending: false })
-    .limit(1)
-    .single();
+  const data = await activeMacrocycle<{ name: string }>(supabase, 'name');
   return { title: `${data?.name ?? 'CURRENT'} · CURRENT` };
 }
 
@@ -29,15 +25,14 @@ export default async function DashboardPage() {
   // ── batch 1: macrocycle + today + latest note (all independent) ─
 
   const [
-    { data: macrocycles },
+    macrocycle,
     { data: trainingDay },
     { data: latestNoteRaw },
   ] = await Promise.all([
-    supabase
-      .from('macrocycles')
-      .select('id, name, goal_event, start_date, end_date')
-      .order('start_date', { ascending: false })
-      .limit(1),
+    activeMacrocycle<{
+      id: string; name: string; goal_event: string | null;
+      start_date: string; end_date: string;
+    }>(supabase, 'id, name, goal_event, start_date, end_date'),
     supabase
       .from('training_days')
       .select('id, date, session_type, status, readiness_score, notes')
@@ -52,8 +47,6 @@ export default async function DashboardPage() {
       .limit(1)
       .maybeSingle(),
   ]);
-
-  const macrocycle = macrocycles?.[0] ?? null;
 
   // ── batch 2: phases + today's sessions (depend on batch 1) ───
 

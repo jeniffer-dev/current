@@ -1,18 +1,14 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { activeMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('macrocycles')
-    .select('name')
-    .order('start_date', { ascending: false })
-    .limit(1)
-    .single();
+  const data = await activeMacrocycle<{ name: string }>(supabase, 'name');
   return { title: `${data?.name ?? 'CURRENT'} · CURRENT` };
 }
 
@@ -40,13 +36,10 @@ export default async function MacrocyclePage() {
   const cookieStore = await cookies();
   const today = todayInTimezone(cookieStore.get('tz')?.value);
 
-  const { data: macrocycles } = await supabase
-    .from('macrocycles')
-    .select('id, name, goal_event, start_date, end_date')
-    .order('start_date', { ascending: false })
-    .limit(1);
-
-  const macrocycle: Macrocycle | null = macrocycles?.[0] ?? null;
+  const macrocycle = await activeMacrocycle<Macrocycle>(
+    supabase,
+    'id, name, goal_event, start_date, end_date',
+  );
 
   let phases: Phase[] = [];
   if (macrocycle) {

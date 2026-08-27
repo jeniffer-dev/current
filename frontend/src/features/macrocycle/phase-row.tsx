@@ -91,6 +91,10 @@ export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
           )}
         </div>
 
+        {phase.notes && (
+          <p className="text-sm leading-relaxed text-muted-foreground">{phase.notes}</p>
+        )}
+
         {status === 'active' && (
           <div className="h-1 rounded-full bg-muted overflow-hidden">
             <div

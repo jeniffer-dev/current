@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
+import { activeMacrocycle } from '@/lib/macrocycle';
 
 export const metadata: Metadata = { title: 'Content Audit · CURRENT' };
 
@@ -79,13 +80,10 @@ export default async function AuditPage() {
   const supabase = await createClient();
 
   // Macrocycle
-  const { data: macroCyclesRaw } = await supabase
-    .from('macrocycles')
-    .select('id, name, goal_event, start_date, end_date')
-    .order('start_date', { ascending: false })
-    .limit(1);
-
-  const macrocycle = macroCyclesRaw?.[0] ?? null;
+  const macrocycle = await activeMacrocycle<{
+    id: string; name: string; goal_event: string | null;
+    start_date: string; end_date: string;
+  }>(supabase, 'id, name, goal_event, start_date, end_date');
 
   // Everything else in parallel
   const [
