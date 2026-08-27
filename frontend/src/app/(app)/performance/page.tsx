@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { scopedMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { epley1RM } from '@/lib/suggested-weight';
 import { TestingBlock } from '@/features/performance/testing-block';
@@ -61,13 +62,11 @@ export default async function PerformancePage() {
 
   // ── macrocycle (needed for everything else) ─────────────────
 
-  const { data: macrocyclesRaw } = await supabase
-    .from('macrocycles')
-    .select('id, name, goal_event, start_date, end_date')
-    .order('start_date', { ascending: false })
-    .limit(1);
-
-  const macrocycle: Macrocycle | null = macrocyclesRaw?.[0] ?? null;
+  const macrocycle = await scopedMacrocycle<Macrocycle>(
+    supabase,
+    today,
+    'id, name, goal_event, start_date, end_date',
+  );
 
   // ── batch: phases + testing blocks + exercise logs (parallel) ─
 

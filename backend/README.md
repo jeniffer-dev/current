@@ -41,17 +41,23 @@ Placeholder:
 ## Folder Structure
 
 ```
-backend/
+<repo root>/
   supabase/
-    migrations/   ← SQL migration files (timestamped, sequential)
-  .env.example    ← required environment variables
+    config.toml   ← project link — run every `supabase` command from the repo root
+    migrations/   ← SQL migration files
+  backend/
+    .env.example  ← required environment variables
 ```
 
 ---
 
 ## Migrations
 
-All schema changes go through `supabase/migrations/`.
+All schema changes go through `supabase/migrations/` **at the repo root**, not under
+`backend/`. Run the CLI from the repo root, where the project is linked.
+
+See `.claude/skills/supabase-migrations/SKILL.md` for the current history state and the
+verification steps to run before writing a migration.
 
 Rules:
 - One concern per migration file

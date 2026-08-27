@@ -1,14 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
+import { phaseTint } from '@/lib/phase-catalog';
+import { PhaseSessionMix, type PhasePrescription } from './phase-session-mix';
 import type { Phase } from '@/app/(app)/macrocycle/page';
-
-const phaseTints: Record<string, string> = {
-  adaptation:    'bg-teal-50 text-teal-700',
-  accumulation:  'bg-orange-50 text-orange-700',
-  transmutation: 'bg-amber-50 text-amber-700',
-  realization:   'bg-yellow-50 text-yellow-700',
-  competition:   'bg-emerald-50 text-emerald-700',
-  reset:         'bg-slate-50 text-slate-500',
-};
 
 type PhaseStatus = 'upcoming' | 'active' | 'completed';
 
@@ -53,10 +46,20 @@ const statusLabel: Record<PhaseStatus, string> = {
   completed: 'Completed',
 };
 
-export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
+export function PhaseRow({
+  phase,
+  today,
+  prescriptions = [],
+  editedWeeks = 0,
+}: {
+  phase:          Phase;
+  today:          string;
+  prescriptions?: PhasePrescription[];
+  editedWeeks?:   number;
+}) {
   const status = getStatus(phase.start_date, phase.end_date, today);
   const progress = getProgress(phase.start_date, phase.end_date, today);
-  const tint = phaseTints[phase.phase_type] ?? phaseTints.reset;
+  const tint = phaseTint(phase.phase_type);
   const weeks = getWeeks(phase.start_date, phase.end_date);
 
   return (
@@ -91,6 +94,10 @@ export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
           )}
         </div>
 
+        {phase.notes && (
+          <p className="text-sm leading-relaxed text-muted-foreground">{phase.notes}</p>
+        )}
+
         {status === 'active' && (
           <div className="h-1 rounded-full bg-muted overflow-hidden">
             <div
@@ -99,6 +106,8 @@ export function PhaseRow({ phase, today }: { phase: Phase; today: string }) {
             />
           </div>
         )}
+
+        <PhaseSessionMix prescriptions={prescriptions} editedWeeks={editedWeeks} />
 
         {(phase.volume || phase.intensity) && (
           <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border/50">

@@ -1,31 +1,15 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 
-// Supabase project origin, derived from the same env var the app already
-// uses to talk to Supabase — kept out of the CSP as a hardcoded string so
-// this file works across environments (local, preview, prod) without edits.
-const supabaseOrigin = (() => {
-  try {
-    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin;
-  } catch {
-    return 'https://*.supabase.co';
-  }
-})();
-
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigin}`,
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join('; ');
-
+// Content-Security-Policy is set per-request in middleware.ts, not here —
+// Next's App Router needs a per-request nonce on script-src for its own
+// inline hydration/streaming scripts, and next.config.ts's headers() can
+// only emit a static value. A second static CSP here would also fight the
+// nonce'd one: browsers enforce the intersection of multiple CSP headers,
+// so a nonce-less "script-src 'self'" from this file would block Next's
+// nonced scripts right back out. The rest of the security headers are
+// static, so they stay here.
 const securityHeaders = [
-  { key: 'Content-Security-Policy', value: contentSecurityPolicy },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
