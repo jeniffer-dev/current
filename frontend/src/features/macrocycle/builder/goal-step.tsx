@@ -17,16 +17,31 @@ export function GoalStep({
   state,
   dispatch,
   currentPlanName,
+  today,
 }: {
   state:    BuilderState;
   dispatch: (action: BuilderAction) => void;
   currentPlanName: string | null;
+  today:    string;
 }) {
   const set = (field: 'name' | 'goalEvent' | 'startDate' | 'targetDate') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       dispatch({ type: 'setField', field, value: e.target.value });
 
   const weeksToEvent = weeksBetween(state.startDate, state.targetDate);
+
+  // Where this plan lands is decided by its own start date, not by an act of
+  // replacement: a season built in advance waits its turn instead of taking
+  // over the app the moment it is saved.
+  const startsLater = Boolean(state.startDate && today && state.startDate > today);
+  const landing = !state.startDate ? null
+    : startsLater
+      ? currentPlanName
+        ? `This starts later, so ${currentPlanName} stays your current plan until then.`
+        : 'This starts in the future, so it waits until its first day arrives.'
+      : currentPlanName && currentPlanName !== state.name.trim()
+        ? `This starts right away and takes over from ${currentPlanName}, which moves to your past plans.`
+        : null;
 
   return (
     <div className="space-y-8">
@@ -36,12 +51,8 @@ export function GoalStep({
           A macrocycle is your full season. It&apos;s built from phases, phases are built from
           weeks, and weeks are built from sessions.
         </p>
-        {currentPlanName && (
-          <p className="max-w-[540px] text-sm leading-relaxed text-muted-foreground">
-            Creating this will make <span className="font-medium text-foreground">{currentPlanName}</span>{' '}
-            a past plan. Nothing is deleted — you can make it current again from the
-            macrocycle page.
-          </p>
+        {landing && (
+          <p className="max-w-[540px] text-sm leading-relaxed text-muted-foreground">{landing}</p>
         )}
       </div>
 

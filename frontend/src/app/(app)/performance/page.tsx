@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { scopedMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { epley1RM } from '@/lib/suggested-weight';
 import { TestingBlock } from '@/features/performance/testing-block';
@@ -62,8 +62,9 @@ export default async function PerformancePage() {
 
   // ── macrocycle (needed for everything else) ─────────────────
 
-  const macrocycle = await activeMacrocycle<Macrocycle>(
+  const macrocycle = await scopedMacrocycle<Macrocycle>(
     supabase,
+    today,
     'id, name, goal_event, start_date, end_date',
   );
 

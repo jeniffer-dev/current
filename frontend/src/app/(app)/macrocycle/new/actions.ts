@@ -1,7 +1,6 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createMacrocycleSchema, firstIssueMessage } from '@/lib/validation';
 import { planEndDate, schedulePhases } from '@/lib/phase-plan';
@@ -25,34 +24,6 @@ export async function createMacrocycle(
   // silently stretching the last phase to close it.
   const endDate = planEndDate(plan.startDate, plan.phases);
 
-  // Remembered before anything changes, so a later failure can put the
-  // athlete's existing plan back the way it was.
-  const { data: previous } = await supabase
-    .from('macrocycles')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  // At most one active macrocycle per athlete (partial unique index), so
-  // the previous one has to step down before the new one is inserted.
-  const { error: archiveError } = await supabase
-    .from('macrocycles')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('user_id', user.id)
-    .eq('is_active', true);
-
-  if (archiveError) return { error: archiveError.message };
-
-  const restorePrevious = async () => {
-    if (!previous?.id) return;
-    await supabase
-      .from('macrocycles')
-      .update({ is_active: true })
-      .eq('id', previous.id)
-      .eq('user_id', user.id);
-  };
-
   const { data: created, error: insertError } = await supabase
     .from('macrocycles')
     .insert({
@@ -62,13 +33,11 @@ export async function createMacrocycle(
       goal_event_date: plan.targetDate,
       start_date:      plan.startDate,
       end_date:        endDate,
-      is_active:       true,
     })
     .select('id')
     .single();
 
   if (insertError || !created) {
-    await restorePrevious();
     return { error: insertError?.message ?? 'Could not create the plan.' };
   }
 
@@ -86,13 +55,13 @@ export async function createMacrocycle(
     })),
   );
 
-  // No transaction is available through the Supabase client. Without this
-  // rollback a failure here leaves an active macrocycle with no phases,
-  // which is worse than no macrocycle at all — it shadows the previous one
-  // and every page renders empty.
+  // No transaction is available through the Supabase client, so the
+  // macrocycle is removed by hand if its phases fail to land. A cycle with
+  // no phases is worse than none at all: it covers a date range, so it
+  // becomes "current" the moment today falls inside it, and every page
+  // renders empty.
   if (phasesError) {
     await supabase.from('macrocycles').delete().eq('id', created.id).eq('user_id', user.id);
-    await restorePrevious();
     return { error: phasesError.message };
   }
 
@@ -102,5 +71,9 @@ export async function createMacrocycle(
   revalidatePath('/performance');
   revalidatePath('/tests');
 
-  redirect('/macrocycle');
+  // Navigation is left to the caller. redirect() throws a control-flow
+  // exception that has to travel back through the action boundary, and when
+  // it does not, the client transition never settles and the button sits on
+  // "Creating…" forever while the plan has in fact been created.
+  return { error: null };
 }

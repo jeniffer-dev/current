@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { scopedMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { WeekNav } from '@/features/planner/week-nav';
 import { WeekPlannerBoard } from '@/features/planner/week-planner-board';
@@ -88,10 +88,10 @@ export default async function PlannerPage({
   const params = await searchParams;
 
   // Fetch macrocycle
-  const macrocycle = await activeMacrocycle<{
+  const macrocycle = await scopedMacrocycle<{
     id: string; name: string; goal_event: string | null;
     start_date: string; end_date: string;
-  }>(supabase, 'id, name, goal_event, start_date, end_date');
+  }>(supabase, today, 'id, name, goal_event, start_date, end_date');
 
   if (!macrocycle) {
     return (

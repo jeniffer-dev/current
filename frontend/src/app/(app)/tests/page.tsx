@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { scopedMacrocycle } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { NextTestingBlock } from '@/features/tests/next-testing-block';
 import { TestingTimeline } from '@/features/tests/testing-timeline';
@@ -43,10 +43,10 @@ export default async function TestsPage() {
 
   // ── macrocycle + current phase ────────────────────────────────
 
-  const macrocycle = await activeMacrocycle<{
+  const macrocycle = await scopedMacrocycle<{
     id: string; name: string; goal_event: string | null;
     start_date: string; end_date: string;
-  }>(supabase, 'id, name, goal_event, start_date, end_date');
+  }>(supabase, today, 'id, name, goal_event, start_date, end_date');
 
   let currentPhase: { name: string; phase_type: string } | null = null;
 

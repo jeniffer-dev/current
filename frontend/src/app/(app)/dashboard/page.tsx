@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { getMacrocycles } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { MacrocycleCard } from '@/features/dashboard/macrocycle-card';
 import { PhaseCard } from '@/features/dashboard/phase-card';
@@ -9,12 +9,25 @@ import { CountdownCard } from '@/features/dashboard/countdown-card';
 import { TrainingTodayCard } from '@/features/dashboard/training-today-card';
 import { ConsistencyCard } from '@/features/dashboard/consistency-card';
 import { LatestReflectionCard } from '@/features/dashboard/latest-reflection-card';
+import { BetweenCyclesCard } from '@/features/dashboard/between-cycles-card';
 import type { LatestNote } from '@/features/dashboard/latest-reflection-card';
+
+type DashboardPlan = {
+  id:              string;
+  name:            string;
+  goal_event:      string | null;
+  goal_event_date: string | null;
+  start_date:      string;
+  end_date:        string;
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
-  const data = await activeMacrocycle<{ name: string }>(supabase, 'name');
-  return { title: `${data?.name ?? 'CURRENT'} · CURRENT` };
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
+  const { scope } = await getMacrocycles<{ name: string; start_date: string; end_date: string }>(
+    supabase, today, 'name, start_date, end_date');
+  return { title: `${scope?.name ?? 'CURRENT'} · CURRENT` };
 }
 
 export default async function DashboardPage() {
@@ -25,15 +38,12 @@ export default async function DashboardPage() {
   // ── batch 1: macrocycle + today + latest note (all independent) ─
 
   const [
-    macrocycle,
+    plans,
     { data: trainingDay },
     { data: latestNoteRaw },
   ] = await Promise.all([
-    activeMacrocycle<{
-      id: string; name: string; goal_event: string | null;
-      start_date: string; end_date: string;
-      goal_event_date: string | null;
-    }>(supabase, 'id, name, goal_event, goal_event_date, start_date, end_date'),
+    getMacrocycles<DashboardPlan>(
+      supabase, today, 'id, name, goal_event, goal_event_date, start_date, end_date'),
     supabase
       .from('training_days')
       .select('id, date, session_type, status, readiness_score, notes')
@@ -48,6 +58,11 @@ export default async function DashboardPage() {
       .limit(1)
       .maybeSingle(),
   ]);
+
+  // Between cycles the dashboard reads from the season that just ended —
+  // that is where the training lives — while still naming what comes next.
+  const macrocycle = plans.scope;
+  const betweenCycles = plans.between;
 
   // ── batch 2: phases + today's sessions (depend on batch 1) ───
 
@@ -137,17 +152,21 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="mb-2">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {macrocycle?.name ?? '—'}
+          {betweenCycles ? 'Between cycles' : (macrocycle?.name ?? '—')}
         </h1>
       </div>
 
-      {/* Row 1: Macrocycle + Countdown */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-2">
-          <MacrocycleCard macrocycle={macrocycle} today={today} />
+      {betweenCycles ? (
+        <BetweenCyclesCard previous={plans.previous} next={plans.next} today={today} />
+      ) : (
+        /* Row 1: Macrocycle + Countdown */
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-2">
+            <MacrocycleCard macrocycle={macrocycle} today={today} />
+          </div>
+          <CountdownCard macrocycle={macrocycle} today={today} />
         </div>
-        <CountdownCard macrocycle={macrocycle} today={today} />
-      </div>
+      )}
 
       {/* Row 2: Today + Consistency */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

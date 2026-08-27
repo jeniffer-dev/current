@@ -3,16 +3,19 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { getMacrocycles } from '@/lib/macrocycle';
 import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
-import { PastPlans, type PastPlan } from '@/features/macrocycle/past-plans';
+import { PlanList } from '@/features/macrocycle/plan-list';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
-  const data = await activeMacrocycle<{ name: string }>(supabase, 'name');
-  return { title: `${data?.name ?? 'CURRENT'} · CURRENT` };
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
+  const { scope } = await getMacrocycles<{ name: string; start_date: string; end_date: string }>(
+    supabase, today, 'name, start_date, end_date');
+  return { title: `${scope?.name ?? 'CURRENT'} · CURRENT` };
 }
 
 export type Phase = {
@@ -39,10 +42,9 @@ export default async function MacrocyclePage() {
   const cookieStore = await cookies();
   const today = todayInTimezone(cookieStore.get('tz')?.value);
 
-  const macrocycle = await activeMacrocycle<Macrocycle>(
-    supabase,
-    'id, name, goal_event, start_date, end_date',
-  );
+  const plans = await getMacrocycles<Macrocycle>(
+    supabase, today, 'id, name, goal_event, start_date, end_date');
+  const macrocycle = plans.scope;
 
   let phases: Phase[] = [];
   if (macrocycle) {
@@ -54,16 +56,10 @@ export default async function MacrocyclePage() {
     phases = (data ?? []) as Phase[];
   }
 
-  // Archived plans. Creating a new macrocycle steps the previous one down,
-  // and every page reads the active one — so they need a way back here, or
-  // archiving is a one-way door.
-  const { data: pastPlansRaw } = await supabase
-    .from('macrocycles')
-    .select('id, name, start_date, end_date')
-    .eq('is_active', false)
-    .order('start_date', { ascending: false });
-
-  const pastPlans = (pastPlansRaw ?? []) as PastPlan[];
+  // Other cycles, split by where today falls. Nothing is archived by hand:
+  // a plan is upcoming until its start date, and past after its end.
+  const upcoming = plans.all.filter(p => p.start_date > today).reverse();
+  const past     = plans.all.filter(p => p.end_date < today).reverse();
 
   return (
     <div className="w-full max-w-[1120px] mx-auto px-5 pt-6 pb-8 sm:px-8 sm:pt-7 md:px-10 md:pt-8 space-y-4">
@@ -107,7 +103,8 @@ export default async function MacrocyclePage() {
         </div>
       )}
 
-      <PastPlans plans={pastPlans} />
+      <PlanList plans={upcoming} kind="upcoming" today={today} />
+      <PlanList plans={past} kind="past" today={today} />
     </div>
   );
 }

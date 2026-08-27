@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { activeMacrocycle } from '@/lib/macrocycle';
+import { scopedMacrocycle } from '@/lib/macrocycle';
+import { todayInTimezone } from '@/lib/today';
 
 export const metadata: Metadata = { title: 'Content Audit · CURRENT' };
 
@@ -78,12 +80,14 @@ function Row({ summary, children }: { summary: React.ReactNode; children: React.
 
 export default async function AuditPage() {
   const supabase = await createClient();
+  const cookieStore = await cookies();
+  const today = todayInTimezone(cookieStore.get('tz')?.value);
 
   // Macrocycle
-  const macrocycle = await activeMacrocycle<{
+  const macrocycle = await scopedMacrocycle<{
     id: string; name: string; goal_event: string | null;
     start_date: string; end_date: string;
-  }>(supabase, 'id, name, goal_event, start_date, end_date');
+  }>(supabase, today, 'id, name, goal_event, start_date, end_date');
 
   // Everything else in parallel
   const [

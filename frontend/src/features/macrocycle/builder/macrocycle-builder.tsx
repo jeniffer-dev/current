@@ -67,8 +67,8 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
           weeks:       phase.weeks,
         })),
       });
-      // On success the action redirects, so reaching here means it failed.
-      if (result?.error) setError(result.error);
+      if (result?.error) { setError(result.error); return; }
+      router.push('/macrocycle');
     });
   }
 
@@ -115,7 +115,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
 
       <div className="pt-8">
         {state.step === 0
-          ? <GoalStep state={state} dispatch={dispatch} currentPlanName={currentPlanName} />
+          ? <GoalStep state={state} dispatch={dispatch} currentPlanName={currentPlanName} today={today} />
           : <PhasesStep state={state} dispatch={dispatch} />}
       </div>
 
