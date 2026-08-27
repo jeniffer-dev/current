@@ -2,7 +2,7 @@
 
 import { useReducer, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createMacrocycle } from '@/app/(app)/macrocycle/new/actions';
 import {
@@ -51,11 +51,11 @@ export function MacrocycleBuilder({ today }: { today: string }) {
     <div className="mx-auto w-full max-w-[720px] px-5 pb-8 pt-6 sm:px-8 md:px-10">
       <div className="flex items-center justify-between gap-4">
         <Button
-          type="button" variant="outline" size="icon"
-          aria-label="Leave without creating a plan"
+          type="button" variant="ghost" size="sm"
+          className="-ml-3 min-w-[74px] justify-start text-muted-foreground"
           onClick={() => router.push('/macrocycle')}
         >
-          <X className="h-4 w-4" />
+          Cancel
         </Button>
 
         <nav aria-label="Progress" className="flex items-center gap-2.5">
