@@ -8,7 +8,9 @@ import { todayInTimezone } from '@/lib/today';
 import { MacrocycleTimeline } from '@/features/macrocycle/macrocycle-timeline';
 import { PhaseRow } from '@/features/macrocycle/phase-row';
 import { PlanList } from '@/features/macrocycle/plan-list';
+import { PlanActions } from '@/features/macrocycle/plan-actions';
 import type { PhasePrescription } from '@/features/macrocycle/phase-session-mix';
+import type { PlanWeight } from '@/features/macrocycle/plan-actions';
 
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient();
@@ -44,8 +46,31 @@ export default async function MacrocyclePage() {
   const today = todayInTimezone(cookieStore.get('tz')?.value);
 
   const plans = await getMacrocycles<Macrocycle>(
-    supabase, today, 'id, name, goal_event, start_date, end_date');
+    supabase, today, 'id, name, goal_event, start_date, end_date, archived_at');
   const macrocycle = plans.scope;
+
+  // How much training stands behind each plan. This decides whether a
+  // plan may be deleted at all: training days cascade from a macrocycle,
+  // and sessions and logged sets cascade from them, so offering delete on
+  // a trained plan offers to erase a season.
+  const weights = new Map<string, PlanWeight>();
+  const everyPlan = [...plans.all, ...plans.archived];
+
+  if (everyPlan.length > 0) {
+    const ids = everyPlan.map(p => p.id);
+    const [{ data: days }, { data: results }] = await Promise.all([
+      supabase.from('training_days').select('macrocycle_id').in('macrocycle_id', ids),
+      supabase.from('test_results').select('macrocycle_id').in('macrocycle_id', ids),
+    ]);
+    for (const id of ids) weights.set(id, { trainingDays: 0, results: 0 });
+    for (const row of days ?? []) {
+      const w = weights.get(row.macrocycle_id); if (w) w.trainingDays++;
+    }
+    for (const row of results ?? []) {
+      if (!row.macrocycle_id) continue;
+      const w = weights.get(row.macrocycle_id); if (w) w.results++;
+    }
+  }
 
   let phases: Phase[] = [];
   // The typical week of each phase, and how many weeks depart from it.
@@ -107,9 +132,19 @@ export default async function MacrocyclePage() {
           <p className="mt-0.5 text-sm text-muted-foreground">Preparation roadmap</p>
         </div>
         {macrocycle && (
-          <Button asChild variant="outline" size="sm" className="mt-1 shrink-0">
-            <Link href="/macrocycle/new">New plan</Link>
-          </Button>
+          <div className="mt-1 flex shrink-0 flex-col items-end gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/macrocycle/new">New plan</Link>
+            </Button>
+            {/* The plan you are in needs these most: the one created by
+                mistake is the one that takes over the dashboard. */}
+            <PlanActions
+              id={macrocycle.id}
+              name={macrocycle.name}
+              archived={false}
+              weight={weights.get(macrocycle.id) ?? { trainingDays: 0, results: 0 }}
+            />
+          </div>
         )}
       </div>
 
@@ -144,8 +179,9 @@ export default async function MacrocyclePage() {
         </div>
       )}
 
-      <PlanList plans={upcoming} kind="upcoming" today={today} />
-      <PlanList plans={past} kind="past" today={today} />
+      <PlanList plans={upcoming} kind="upcoming" today={today} weights={weights} />
+      <PlanList plans={past} kind="past" today={today} weights={weights} />
+      <PlanList plans={plans.archived} kind="archived" today={today} weights={weights} />
     </div>
   );
 }

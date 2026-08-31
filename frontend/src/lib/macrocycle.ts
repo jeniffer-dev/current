@@ -2,7 +2,12 @@ import type { createClient } from '@/lib/supabase/server';
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
-export type DatedPlan = { start_date: string; end_date: string };
+export type DatedPlan = {
+  start_date:   string;
+  end_date:     string;
+  /** Set aside: keeps its history, no longer competes to be current. */
+  archived_at?: string | null;
+};
 
 export type PlanStatus = 'current' | 'upcoming' | 'past';
 
@@ -19,8 +24,10 @@ export type Macrocycles<T extends DatedPlan> = {
   previous: T | null;
   /** The next cycle that has not started. */
   next:     T | null;
-  /** Every cycle, oldest first. */
+  /** Every LIVE cycle, oldest first. Archived ones are not here. */
   all:      T[];
+  /** Cycles that were set aside. Kept, and out of the way. */
+  archived: T[];
   /** True between cycles: nothing contains today, but there is history or a plan ahead. */
   between:  boolean;
   /**
@@ -53,11 +60,18 @@ export async function getMacrocycles<T extends DatedPlan>(
     .select(columns)
     .order('start_date', { ascending: true });
 
-  const all = (data ?? []) as unknown as T[];
+  const everything = (data ?? []) as unknown as T[];
 
-  // Overlapping cycles are not prevented by the schema, so the tiebreak is
-  // stated rather than left to row order: the one that started most
-  // recently wins, which is what an athlete means by "the cycle I'm in".
+  // Archived cycles keep their history but take no part in deciding where
+  // today sits. They are the reason the constraint that forbids
+  // overlapping cycles exempts them: setting a block aside and starting
+  // again over the same weeks is a real thing to do.
+  const all = everything.filter(p => !p.archived_at);
+
+  // The database now forbids two live cycles from sharing a day, so this
+  // should never have to choose. The tiebreak stays as a statement of
+  // intent for data that predates the constraint: the one that started
+  // most recently wins.
   const current = all
     .filter(p => planStatus(p, today) === 'current')
     .sort((a, b) => (a.start_date < b.start_date ? 1 : -1))[0] ?? null;
@@ -72,7 +86,11 @@ export async function getMacrocycles<T extends DatedPlan>(
 
   const between = current === null && (previous !== null || next !== null);
 
-  return { current, previous, next, all, between, scope: current ?? previous ?? next };
+  return {
+    current, previous, next, all, between,
+    archived: everything.filter(p => p.archived_at),
+    scope: current ?? previous ?? next,
+  };
 }
 
 /** The cycle pages should read from. Most pages need only this. */
