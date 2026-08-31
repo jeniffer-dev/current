@@ -15,9 +15,24 @@ export default async function NewMacrocyclePage() {
 
   // Named in the builder so it can say where this plan will land: a cycle
   // starting later waits its turn rather than replacing anything.
-  const { current } = await getMacrocycles<{
-    name: string; start_date: string; end_date: string;
-  }>(supabase, today, 'name, start_date, end_date');
+  const [{ current }, { data: templates }] = await Promise.all([
+    getMacrocycles<{ name: string; start_date: string; end_date: string }>(
+      supabase, today, 'name, start_date, end_date'),
+    // The athlete's test library. Testing is scheduled from what they
+    // already measure, so an empty library simply means no testing step
+    // suggestions — never an invented battery.
+    supabase
+      .from('test_templates')
+      .select('id, name, category, metric_type, unit')
+      .order('category', { ascending: true })
+      .order('name', { ascending: true }),
+  ]);
 
-  return <MacrocycleBuilder today={today} currentPlanName={current?.name ?? null} />;
+  return (
+    <MacrocycleBuilder
+      today={today}
+      currentPlanName={current?.name ?? null}
+      templates={templates ?? []}
+    />
+  );
 }

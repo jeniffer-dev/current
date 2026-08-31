@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { ChevronLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { todayInTimezone } from '@/lib/today';
-import { SESSIONS_BY_WEEK } from '@/features/tests/sessions-config';
+import { prescriptionsForSessions } from '@/features/tests/session-prescriptions';
 import {
   ResultForm,
   type FormSection,
@@ -79,13 +79,25 @@ export default async function TestSessionPage(
 
   if (!session) notFound();
 
-  // ── resolve config for this session ───────────────────────
+  // ── what this session prescribes ──────────────────────────
 
-  const weekConfig    = SESSIONS_BY_WEEK[weekNumber];
-  const sessionConfig = weekConfig?.find(c => c.label === session.session_label);
-  if (!sessionConfig) notFound();
+  // Read from the session's own items. A session with nothing in it is
+  // still a real session — it is reached from a block that exists — so
+  // it renders empty rather than 404ing, which is what matching against
+  // a hardcoded config used to do.
+  const { data: blockSessions } = await supabase
+    .from('testing_sessions')
+    .select('id')
+    .eq('testing_block_id', session.testing_block_id)
+    .eq('user_id', user.id);
 
-  const totalBlockTemplates = weekConfig.reduce((sum, s) => sum + s.templates.length, 0);
+  const blockPrescriptions = await prescriptionsForSessions(
+    supabase, (blockSessions ?? []).map(s => s.id));
+
+  const templates = blockPrescriptions.get(session.id) ?? [];
+
+  const totalBlockTemplates = [...blockPrescriptions.values()]
+    .reduce((sum, t) => sum + t.length, 0);
 
   // ── macrocycle + current phase ────────────────────────────
 
@@ -120,21 +132,6 @@ export default async function TestSessionPage(
     phases[phases.length - 1] ??
     null;
 
-  // ── test templates for this session ───────────────────────
-
-  const { data: templatesRaw } = await supabase
-    .from('test_templates')
-    .select('id, name, category, metric_type, unit')
-    .eq('user_id', user.id)
-    .in('name', sessionConfig.templates);
-
-  // Preserve config order
-  const templates = (templatesRaw ?? []).sort(
-    (a, b) =>
-      sessionConfig.templates.indexOf(a.name) -
-      sessionConfig.templates.indexOf(b.name)
-  );
-
   const templateIds = templates.map(t => t.id);
 
   const sections: FormSection[] = templates.length > 0
@@ -144,7 +141,7 @@ export default async function TestSessionPage(
           id:          t.id,
           name:        t.name,
           metric_type: t.metric_type,
-          unit:        t.unit,
+          unit:        t.unit ?? '',
         })),
       }]
     : [];

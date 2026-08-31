@@ -32,8 +32,36 @@ export type SessionPlan = {
   otherLabel: string;
 };
 
+/**
+ * When a battery happens. A phase anchor is held by phase UID, not by
+ * database id: the plan does not exist yet, so the phases it points at
+ * have no ids until it is created.
+ */
+export type BuilderAnchor =
+  | { kind: 'phase'; phaseUid: string; position: 'start' | 'end' }
+  | { kind: 'date';  date: string };
+
+export type BatteryKind = 'in_water' | 'strength' | 'mixed';
+
+export type BuilderBattery = {
+  uid:         string;
+  name:        string;
+  kind:        BatteryKind;
+  templateIds: string[];
+  anchors:     BuilderAnchor[];
+};
+
+/** A test the athlete already has in their library. */
+export type TestTemplate = {
+  id:          string;
+  name:        string;
+  category:    string;
+  metric_type: string;
+  unit:        string | null;
+};
+
 export type BuilderState = {
-  step:            0 | 1 | 2;
+  step:            0 | 1 | 2 | 3;
   name:            string;
   goalEvent:       string;
   startDate:       string;
@@ -51,11 +79,16 @@ export type BuilderState = {
   activePhaseUid:  string | null;
   /** Which week of the active phase is open for editing, if any. */
   activeWeek:      number | null;
+  /** The athlete's test library, loaded on the server. Never edited here. */
+  templates:       TestTemplate[];
+  batteries:       BuilderBattery[];
+  nextBatteryUid:  number;
+  activeBatteryUid: string | null;
 };
 
 export type BuilderAction =
   | { type: 'setField'; field: 'name' | 'goalEvent' | 'startDate' | 'targetDate' | 'customPhaseName'; value: string }
-  | { type: 'step'; step: 0 | 1 | 2 }
+  | { type: 'step'; step: 0 | 1 | 2 | 3 }
   | { type: 'togglePhase'; uid: string }
   | { type: 'setWeeks'; uid: string; delta: number }
   | { type: 'setDescription'; uid: string; value: string }
@@ -70,24 +103,67 @@ export type BuilderAction =
   | { type: 'setOtherLabel'; uid: string; value: string }
   | { type: 'adjustWeek'; uid: string; week: number; key: ActivityKey; delta: number }
   | { type: 'deloadWeek'; uid: string; week: number }
-  | { type: 'resetWeek'; uid: string; week: number };
+  | { type: 'resetWeek'; uid: string; week: number }
+  | { type: 'addBattery'; kind: BatteryKind }
+  | { type: 'removeBattery'; uid: string }
+  | { type: 'selectBattery'; uid: string }
+  | { type: 'setBatteryName'; uid: string; value: string }
+  | { type: 'toggleTemplate'; uid: string; templateId: string }
+  | { type: 'togglePhaseAnchor'; uid: string; phaseUid: string; position: 'start' | 'end' }
+  | { type: 'addDateAnchor'; uid: string; date: string }
+  | { type: 'removeDateAnchor'; uid: string; date: string };
 
-export function initialBuilderState(today: string): BuilderState {
+const kindLabels: Record<BatteryKind, string> = {
+  in_water: 'Water testing',
+  strength: 'Gym testing',
+  mixed:    'Testing',
+};
+
+export function batteryKindLabel(kind: BatteryKind): string {
+  return kindLabels[kind];
+}
+
+/**
+ * A battery per kind of test the athlete actually owns. Suggesting a
+ * water battery to someone with no water tests would be inventing a plan
+ * for them; the library is what they have said they measure.
+ */
+function suggestedBatteries(templates: TestTemplate[]): BuilderBattery[] {
+  const kinds: BatteryKind[] = ['in_water', 'strength'];
+  return kinds
+    .filter(kind => templates.some(t => t.category === kind))
+    .map((kind, i) => ({
+      uid:         `b${i}`,
+      name:        kindLabels[kind],
+      kind,
+      templateIds: templates.filter(t => t.category === kind).map(t => t.id),
+      anchors:     [],
+    }));
+}
+
+export function initialBuilderState(
+  { today, templates }: { today: string; templates: TestTemplate[] },
+): BuilderState {
+  const batteries = suggestedBatteries(templates);
   return {
-    step:            0,
-    name:            '',
-    goalEvent:       '',
-    startDate:       today,
-    targetDate:      '',
-    phases:          suggestedPhases.map((p, i) => ({
+    step:             0,
+    name:             '',
+    goalEvent:        '',
+    startDate:        today,
+    targetDate:       '',
+    phases:           suggestedPhases.map((p, i) => ({
       uid: `p${i}`, type: p.type, label: '', description: '', weeks: p.weeks, included: true,
     })),
-    nextUid:         suggestedPhases.length,
-    addingPhase:     false,
-    customPhaseName: '',
-    sessionPlans:    {},
-    activePhaseUid:  null,
-    activeWeek:      null,
+    nextUid:          suggestedPhases.length,
+    addingPhase:      false,
+    customPhaseName:  '',
+    sessionPlans:     {},
+    activePhaseUid:   null,
+    activeWeek:       null,
+    templates,
+    batteries,
+    nextBatteryUid:   batteries.length,
+    activeBatteryUid: batteries[0]?.uid ?? null,
   };
 }
 
@@ -241,7 +317,105 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         delete overrides[action.week];
         return { ...plan, overrides };
       });
+
+    case 'addBattery': {
+      const uid = `b${state.nextBatteryUid}`;
+      return {
+        ...state,
+        batteries: [...state.batteries, {
+          uid, name: kindLabels[action.kind], kind: action.kind,
+          templateIds: state.templates.filter(t => t.category === action.kind).map(t => t.id),
+          anchors: [],
+        }],
+        nextBatteryUid:   state.nextBatteryUid + 1,
+        activeBatteryUid: uid,
+      };
+    }
+
+    case 'removeBattery': {
+      const batteries = state.batteries.filter(b => b.uid !== action.uid);
+      return {
+        ...state,
+        batteries,
+        activeBatteryUid:
+          state.activeBatteryUid === action.uid ? (batteries[0]?.uid ?? null) : state.activeBatteryUid,
+      };
+    }
+
+    case 'selectBattery':
+      return { ...state, activeBatteryUid: action.uid };
+
+    case 'setBatteryName':
+      return editBattery(state, action.uid, b => ({ ...b, name: action.value }));
+
+    case 'toggleTemplate':
+      return editBattery(state, action.uid, b => ({
+        ...b,
+        templateIds: b.templateIds.includes(action.templateId)
+          ? b.templateIds.filter(id => id !== action.templateId)
+          : [...b.templateIds, action.templateId],
+      }));
+
+    case 'togglePhaseAnchor':
+      return editBattery(state, action.uid, b => {
+        const has = hasPhaseAnchor(b, action.phaseUid, action.position);
+        return {
+          ...b,
+          anchors: has
+            ? b.anchors.filter(a =>
+                !(a.kind === 'phase' && a.phaseUid === action.phaseUid && a.position === action.position))
+            : [...b.anchors, { kind: 'phase', phaseUid: action.phaseUid, position: action.position }],
+        };
+      });
+
+    case 'addDateAnchor':
+      return editBattery(state, action.uid, b =>
+        // A date already on the list is not a second sitting.
+        b.anchors.some(a => a.kind === 'date' && a.date === action.date)
+          ? b
+          : { ...b, anchors: [...b.anchors, { kind: 'date', date: action.date }] });
+
+    case 'removeDateAnchor':
+      return editBattery(state, action.uid, b => ({
+        ...b,
+        anchors: b.anchors.filter(a => !(a.kind === 'date' && a.date === action.date)),
+      }));
   }
+}
+
+// ── batteries ─────────────────────────────────────────────────
+
+function editBattery(
+  state: BuilderState,
+  uid: string,
+  edit: (battery: BuilderBattery) => BuilderBattery,
+): BuilderState {
+  return { ...state, batteries: state.batteries.map(b => (b.uid === uid ? edit(b) : b)) };
+}
+
+export function hasPhaseAnchor(
+  battery: BuilderBattery,
+  phaseUid: string,
+  position: 'start' | 'end',
+): boolean {
+  return battery.anchors.some(a =>
+    a.kind === 'phase' && a.phaseUid === phaseUid && a.position === position);
+}
+
+export function dateAnchors(battery: BuilderBattery): string[] {
+  return battery.anchors
+    .filter((a): a is { kind: 'date'; date: string } => a.kind === 'date')
+    .map(a => a.date)
+    .sort();
+}
+
+/**
+ * Batteries worth creating. One with no tests in it prescribes nothing,
+ * and one with no anchors never happens — neither is a plan, and writing
+ * either would put an empty row on the athlete's calendar.
+ */
+export function schedulableBatteries(state: BuilderState): BuilderBattery[] {
+  return state.batteries.filter(b => b.templateIds.length > 0 && b.anchors.length > 0);
 }
 
 // ── session plans ─────────────────────────────────────────────

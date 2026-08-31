@@ -8,22 +8,33 @@ import { createMacrocycle } from '@/app/(app)/macrocycle/new/actions';
 import {
   baselineWeek,
   builderReducer,
+  schedulableBatteries,
   goalStepBlocker,
   includedPhases,
   initialBuilderState,
   phaseName,
   sessionPlan,
+  type TestTemplate,
 } from './state';
 import { activities } from '@/lib/session-catalog';
 import { GoalStep } from './goal-step';
+import { TestsStep } from './tests-step';
 import { PhasesStep } from './phases-step';
 import { SessionsStep } from './sessions-step';
 
-const STEPS = ['Goal', 'Phases', 'Sessions'] as const;
+const STEPS = ['Goal', 'Phases', 'Sessions', 'Testing'] as const;
 
-export function MacrocycleBuilder({ today, currentPlanName }: { today: string; currentPlanName: string | null }) {
+export function MacrocycleBuilder({
+  today,
+  currentPlanName,
+  templates,
+}: {
+  today:           string;
+  currentPlanName: string | null;
+  templates:       TestTemplate[];
+}) {
   const router = useRouter();
-  const [state, dispatch] = useReducer(builderReducer, today, initialBuilderState);
+  const [state, dispatch] = useReducer(builderReducer, { today, templates }, initialBuilderState);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -33,7 +44,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
   // No forward button is ever disabled. A greyed-out button cannot say what
   // it wants, so pressing it is the fastest way to find out: it states the
   // problem and moves the cursor to the field that has it.
-  function goToStep(step: 0 | 1 | 2) {
+  function goToStep(step: 0 | 1 | 2 | 3) {
     if (step > 0 && blocker) {
       setError(blocker.message);
       dispatch({ type: 'step', step: 0 });
@@ -100,6 +111,25 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
               })),
           };
         }),
+        // Testing is optional. Batteries with no tests or no dates are
+        // dropped here rather than becoming empty rows on the calendar.
+        batteries: schedulableBatteries(state).map(battery => ({
+          name:        battery.name.trim() || 'Testing',
+          kind:        battery.kind,
+          templateIds: battery.templateIds,
+          anchors:     battery.anchors.map(anchor =>
+            anchor.kind === 'phase'
+              // Phases have no ids yet, so an anchor travels as the INDEX of
+              // its phase in the submitted list and is resolved after insert.
+              ? {
+                  kind:       'phase' as const,
+                  phaseIndex: phases.findIndex(p => p.uid === anchor.phaseUid),
+                  position:   anchor.position,
+                  date:       null,
+                }
+              : { kind: 'date' as const, phaseIndex: null, position: null, date: anchor.date },
+          ).filter(a => a.kind === 'date' || a.phaseIndex >= 0),
+        })),
       });
       if (result?.error) { setError(result.error); return; }
       router.push('/macrocycle');
@@ -122,7 +152,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
             <button
               key={label}
               type="button"
-              onClick={() => goToStep(i as 0 | 1 | 2)}
+              onClick={() => goToStep(i as 0 | 1 | 2 | 3)}
               aria-current={i === state.step ? 'step' : undefined}
               className="flex flex-col items-center gap-1.5 px-1 py-1 disabled:opacity-40"
             >
@@ -153,6 +183,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
         )}
         {state.step === 1 && <PhasesStep state={state} dispatch={dispatch} />}
         {state.step === 2 && <SessionsStep state={state} dispatch={dispatch} />}
+        {state.step === 3 && <TestsStep state={state} dispatch={dispatch} />}
       </div>
 
       {/* The message lives inside the sticky bar, not in document flow: the
@@ -170,7 +201,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
           {state.step > 0 ? (
             <Button
               type="button" variant="ghost"
-              onClick={() => dispatch({ type: 'step', step: (state.step - 1) as 0 | 1 })}
+              onClick={() => dispatch({ type: 'step', step: (state.step - 1) as 0 | 1 | 2 })}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back
@@ -182,7 +213,7 @@ export function MacrocycleBuilder({ today, currentPlanName }: { today: string; c
               {isPending ? 'Creating…' : 'Create plan'}
             </Button>
           ) : (
-            <Button type="button" onClick={() => goToStep((state.step + 1) as 1 | 2)}>
+            <Button type="button" onClick={() => goToStep((state.step + 1) as 1 | 2 | 3)}>
               Continue
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
